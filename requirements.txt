@@ -1,0 +1,16 @@
+# PDF
+pypdf>=5.0,<6.0
+
+# PostgreSQL + pgvector
+psycopg[binary]>=3.2,<4.0
+pgvector>=0.3,<1.0
+
+# Configuración / entorno
+python-dotenv>=1.0,<2.0
+pydantic-settings>=2.5,<3.0
+
+# SDK oficial de Google Gemini
+google-genai>=1.0,<2.0
+
+# Reintentos con espera (límites de uso de la API)
+tenacity>=9.0,<10.0

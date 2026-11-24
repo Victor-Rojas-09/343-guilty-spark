@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Testing y herramientas
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Datos y artefactos
+data/*.pdf
+data/raw/
+*.log
+tmp/
+.cache/
+
+# IDE / sistema operativo
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Docker
+pgdata/

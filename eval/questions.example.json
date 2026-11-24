@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "description": "Conjunto de evaluación para el sistema RAG del manual de Halo: Combat Evolved.",
+  "questions": [
+    {
+      "id": "direct-001",
+      "category": "direct",
+      "question": "¿Qué tipos de armas se describen en el manual?",
+      "expected_pages": [],
+      "reference_answer": "",
+      "notes": "Completar con la respuesta y páginas reales del manual."
+    },
+    {
+      "id": "multi-001",
+      "category": "multi_fragment",
+      "question": "¿Cómo se combinan las características del vehículo y su uso táctico?",
+      "expected_pages": [],
+      "reference_answer": "",
+      "notes": "Requiere combinar información de varias secciones."
+    },
+    {
+      "id": "unanswerable-001",
+      "category": "unanswerable",
+      "question": "¿Cuál es la contraseña del sistema de navegación de la nave Pillar of Autumn?",
+      "expected_pages": [],
+      "reference_answer": "",
+      "expected_behavior": "responder_explicitamente_sin_contexto",
+      "notes": "El manual no debería contener esta información."
+    }
+  ]
+}
