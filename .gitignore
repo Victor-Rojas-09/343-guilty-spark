@@ -24,10 +24,9 @@ ENV/
 .coverage
 .coverage.*
 htmlcov/
+coverage.xml
 
-# Datos y artefactos
-data/*.pdf
-data/raw/
+# Artefactos locales
 *.log
 tmp/
 .cache/

@@ -1,0 +1,30 @@
+DOSSIER 343 GUILTY SPARK -
+
+CONTENIDO
+01_Dossier_de_lore_343_Guilty_Spark.pdf
+  Biografia cronologica, origen Chakas, transformacion, aislamiento, juegos, novelas, arco de Rion Forge y temas del personaje.
+02_Guia_de_dialogos_y_transcripciones.pdf
+  Guia de escenas donde habla Spark, enlaces directos a transcripciones palabra por palabra y terminales.
+03_Fuentes_bibliografia_y_comunidad.pdf
+  Bibliografia comentada, clasificacion de fiabilidad, enlaces oficiales, wikis, archivos y comunidad.
+04_Dossier_lore_en_texto.md
+  Version de texto Markdown del dossier de lore.
+05_Guia_dialogos_en_texto.md
+  Version Markdown de la guia de dialogos y transcripciones.
+06_Catalogo_de_enlaces.txt
+  Indice de enlaces consultados.
+07_Analisis_de_debates_comunitarios.txt
+  Sintesis de hilos de r/HaloStory sobre identidad, Primordium, redencion y protocolos.
+
+NOTA SOBRE LOS DIALOGOS
+No se incluye una copia integral de guiones protegidos por derechos de autor. En su lugar, el paquete indica el nivel/terminal y enlaza los archivos que conservan las transcripciones exactas. Los resúmenes son redaccion original y no sustituyen el texto del juego.
+
+CRITERIO DE FUENTES
+Prioriza juegos, novelas y publicaciones oficiales de Halo Waypoint/Xbox para el canon. Halopedia es una referencia secundaria de gran utilidad. Halo Story Page es un archivo de transcripciones fan/historico. Reddit sirve para ideas y debates, no como autoridad canonica.
+
+ACTUALIZACIONES RECIENTES INCLUIDAS
+- Halo: Campaign Evolved: nuevo dialogo en The Library y 13 terminales.
+- Halo: Parasite's Wake: novela publicada en octubre de 2026; Spark figura entre sus apariciones.
+- Halo: Veritas Aeterna: Chronicle oficial publicado el 15 de noviembre de 2026, incluye registros de Spark.
+
+Fuentes y enlaces adicionales en los PDF 02 y 03.

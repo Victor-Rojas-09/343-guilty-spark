@@ -1,16 +1,27 @@
-# PDF
-pypdf>=5.0,<6.0
+# --- Corpus / carga documental ---
+pypdf>=5.0,<7.0
+chardet>=5.0,<6.0
 
-# PostgreSQL + pgvector
+# --- PostgreSQL + pgvector ---
 psycopg[binary]>=3.2,<4.0
 pgvector>=0.3,<1.0
+sqlalchemy>=2.0,<3.0
 
-# Configuración / entorno
+# --- Configuración / entorno ---
 python-dotenv>=1.0,<2.0
 pydantic-settings>=2.5,<3.0
 
-# SDK oficial de Google Gemini
+# --- LangChain ---
+langchain>=0.3,<0.4
+langchain-core>=0.3,<0.4
+langchain-community>=0.3,<0.4
+langchain-text-splitters>=0.3,<0.4
+langchain-postgres>=0.0.13,<0.1.0
+langchain-google-genai>=2.1,<3.0
+
+# --- Gemini (SDK oficial, dependencia de la integración LangChain) ---
 google-genai>=1.0,<2.0
 
-# Reintentos con espera (límites de uso de la API)
-tenacity>=9.0,<10.0
+# --- API ---
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0

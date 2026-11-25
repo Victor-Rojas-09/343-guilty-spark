@@ -1,23 +1,61 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: halo-rag-postgres
+    container_name: spark-rag-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-halo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-halo_dev_password}
-      POSTGRES_DB: ${POSTGRES_DB:-halo_rag}
+      POSTGRES_USER: ${POSTGRES_USER:-spark}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spark_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-spark_rag}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgvector_data:/var/lib/postgresql/data
       - ./docker/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-halo} -d ${POSTGRES_DB:-halo_rag}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 12
       start_period: 5s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spark-rag-api
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-spark}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spark_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-spark_rag}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-001}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-768}
+      DATA_DIR: /app/data
+      COLLECTION_NAME: ${COLLECTION_NAME:-spark_documents}
+      CHUNK_SIZE: ${CHUNK_SIZE:-1000}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-150}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
 
 volumes:
   pgvector_data:
