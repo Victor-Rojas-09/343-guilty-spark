@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # Recuperación (Etapa 2)
     retrieval_top_k: int = Field(default=5, ge=1, le=50)
-    retrieval_min_similarity: float = Field(default=0.55, ge=0.0, le=1.0)
+    retrieval_min_similarity: float = Field(default=0.68, ge=0.0, le=1.0)
     retrieval_categories: str = ""
 
     # Sesiones y conversación (Etapa 2)

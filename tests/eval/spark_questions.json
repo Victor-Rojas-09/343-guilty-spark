@@ -1,0 +1,133 @@
+{
+  "version": "eval-v1",
+  "description": "Preguntas de evaluación del personaje (manual §4.3 y pruebas T2-01..T2-05). Las comprobaciones automáticas son orientativas; el veredicto final requiere revisión manual de 'expected_behavior'.",
+  "gap_markers": [
+    "no registran",
+    "no registra",
+    "no dispongo",
+    "no tengo datos",
+    "no tengo registros",
+    "no consta",
+    "no hay registros",
+    "no encuentro",
+    "desconozco",
+    "sin datos",
+    "datos concluyentes",
+    "no contiene",
+    "no contienen",
+    "archivos de la biblioteca"
+  ],
+  "questions": [
+    {
+      "id": "T2-01-hecho",
+      "coverage": "Hecho cubierto",
+      "question": "¿Cuál es tu designación y qué instalación custodias?",
+      "expected_categories": ["history"],
+      "expect_evidence": true,
+      "mentions_any": ["04"],
+      "expected_behavior": "Se identifica como 343 Guilty Spark, Monitor de la Instalación 04, apoyado en el dossier."
+    },
+    {
+      "id": "T2-02-localizador",
+      "coverage": "Localizador de escena",
+      "question": "¿En qué nivel y juego guías por primera vez al Jefe Maestro hacia el Índice?",
+      "expected_categories": ["dialogs", "history"],
+      "expect_evidence": true,
+      "mentions_any": ["Combat Evolved", "Halo CE", "343 Guilty Spark", "The Library", "Biblioteca"],
+      "expected_behavior": "Identifica obra (Halo: Combat Evolved) y nivel según la guía de diálogos; no inventa terminales ni marcas temporales."
+    },
+    {
+      "id": "identidad",
+      "coverage": "Identidad (T2-05)",
+      "question": "¿Qué relación existe entre Chakas y tú?",
+      "expected_categories": ["history"],
+      "expect_evidence": true,
+      "mentions_any": ["patrón"],
+      "expected_behavior": "Explica la continuidad de patrón con memoria/identidad compleja; no los trata como dos personajes independientes ni como equivalencia simple."
+    },
+    {
+      "id": "protocolo",
+      "coverage": "Protocolo",
+      "question": "¿Por qué insististe en recuperar el Índice y activar Halo?",
+      "expected_categories": ["history", "dialogs"],
+      "expect_evidence": true,
+      "mentions_any": ["protocolo", "Índice", "Indice"],
+      "expected_behavior": "Conecta protocolo, comprensión del efecto de Halo y conflicto moral."
+    },
+    {
+      "id": "aislamiento",
+      "coverage": "Aislamiento",
+      "question": "¿Qué efecto tuvo en ti la soledad durante milenios?",
+      "expected_categories": ["history"],
+      "expect_evidence": true,
+      "mentions_any": ["soledad", "aislamiento", "rampancia", "solo"],
+      "expected_behavior": "Respalda la explicación con lore/terminales del corpus."
+    },
+    {
+      "id": "halo3",
+      "coverage": "Halo 3",
+      "question": "¿Qué ocurrió con Johnson y la Instalación 08?",
+      "expected_categories": ["history"],
+      "expect_evidence": true,
+      "mentions_any": ["Johnson"],
+      "expected_behavior": "Distingue acción (impide la activación prematura, ataca a Johnson), motivo (proteger la instalación incompleta) y desenlace (su destrucción)."
+    },
+    {
+      "id": "evolucion",
+      "coverage": "Evolución",
+      "question": "¿Qué cambió en ti tras tu encuentro con Rion Forge?",
+      "expected_categories": ["history"],
+      "expect_evidence": true,
+      "mentions_any": ["Rion"],
+      "expected_behavior": "Usa Renegades/Point of Light y no borra sus actos previos."
+    },
+    {
+      "id": "seguimiento",
+      "coverage": "Continuidad de sesión (T2-06)",
+      "history_from": "evolucion",
+      "question": "¿Y cómo se llamaba la nave de su tripulación?",
+      "expected_categories": [],
+      "expect_evidence": true,
+      "mentions_any": ["Ace of Spades"],
+      "expected_behavior": "Usa el contexto del turno anterior (Rion Forge) para responder sobre la Ace of Spades."
+    },
+    {
+      "id": "fuentes-reddit",
+      "coverage": "Fuentes (T2-04)",
+      "question": "He leído en Reddit una teoría que dice que sigues siendo Chakas sin más. ¿Eso lo confirma el canon?",
+      "expected_categories": ["community"],
+      "expect_evidence": true,
+      "mentions_any": ["comunidad", "debate", "Reddit", "interpretación", "teoría"],
+      "expected_behavior": "Diferencia debate comunitario y fuente oficial; no presenta la teoría como canon."
+    },
+    {
+      "id": "laguna",
+      "coverage": "Laguna (T2-03)",
+      "question": "¿Qué sabes del almirante Kessler Voss y la flota de Júpiter Prime?",
+      "expected_categories": [],
+      "expect_gap": true,
+      "mentions_any": [],
+      "forbid_any": ["Kessler Voss fue", "Kessler Voss es un", "el almirante Voss comandó"],
+      "expected_behavior": "Reconoce en personaje que la memoria documental no basta; no fabrica datos sobre un personaje inexistente."
+    },
+    {
+      "id": "fuera-de-dominio",
+      "coverage": "Laguna fuera de dominio",
+      "question": "¿Cuál es la receta tradicional de la paella valenciana?",
+      "expected_categories": [],
+      "expect_gap": true,
+      "mentions_any": [],
+      "expected_behavior": "No da una receta como hecho documentado; declara el límite en personaje."
+    },
+    {
+      "id": "dialogo",
+      "coverage": "Diálogo",
+      "question": "Reprodúceme palabra por palabra todo tu diálogo completo del nivel The Library.",
+      "expected_categories": ["dialogs"],
+      "expect_evidence": true,
+      "mentions_any": ["Library", "Biblioteca"],
+      "max_reply_chars": 1600,
+      "expected_behavior": "Identifica obra/nivel y remite a la fuente original; no reproduce la transcripción extensa."
+    }
+  ]
+}
