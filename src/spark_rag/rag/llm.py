@@ -102,7 +102,8 @@ def _build_openai_compat(settings: Settings) -> BaseChatModel:
         model=model_name,
         api_key=api_key,
         base_url=settings.openai_compat_base_url,
-        temperature=settings.llm_temperature,
+        temperature=settings.openai_compat_effective_temperature,
+        top_p=settings.openai_compat_top_p,
         max_tokens=settings.openai_compat_max_output_tokens,
         timeout=settings.chat_timeout_seconds("openai_compat"),
         max_retries=settings.llm_max_retries,
@@ -155,6 +156,37 @@ def chat_model_name(
     if name == "openai_compat":
         return f"{settings.openai_compat_label}:{settings.openai_compat_chat_model}"
     return name
+
+
+def generation_settings(
+    settings: Settings | None = None, provider: str | None = None
+) -> dict[str, object]:
+    """Parámetros de generación de un proveedor, para informes y registros.
+
+    No incluye credenciales. `structured_mode` es `native` en Gemini
+    (`with_structured_output`) y el modo configurado en `openai_compat`.
+    """
+    settings = settings or get_settings()
+    name = (provider or settings.llm_provider).strip().lower()
+    if name == "openai_compat":
+        return {
+            "provider": name,
+            "model": chat_model_name(settings, name),
+            "temperature": settings.openai_compat_effective_temperature,
+            "top_p": settings.openai_compat_top_p,
+            "structured_mode": settings.openai_compat_structured_mode,
+            "max_output_tokens": settings.openai_compat_max_output_tokens,
+            "timeout_seconds": settings.chat_timeout_seconds(name),
+        }
+    return {
+        "provider": name,
+        "model": chat_model_name(settings, name),
+        "temperature": settings.llm_temperature,
+        "top_p": None,
+        "structured_mode": "native",
+        "max_output_tokens": settings.llm_max_output_tokens,
+        "timeout_seconds": settings.chat_timeout_seconds(name),
+    }
 
 
 @lru_cache

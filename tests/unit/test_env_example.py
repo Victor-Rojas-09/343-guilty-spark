@@ -64,5 +64,7 @@ def test_compose_pasa_las_variables_de_respaldo_sin_exigir_clave() -> None:
         "OPENAI_COMPAT_TIMEOUT_SECONDS",
         "OPENAI_COMPAT_MAX_OUTPUT_TOKENS",
         "OPENAI_COMPAT_EXTRA_BODY",
+        "OPENAI_COMPAT_TEMPERATURE",
+        "OPENAI_COMPAT_TOP_P",
     ):
         assert f"{name}: ${{{name}:-" in compose, name

@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     openai_compat_max_output_tokens: int = Field(default=4096, ge=64, le=65536)
     # Objeto JSON opcional que se envía tal cual (p. ej. desactivar el razonamiento).
     openai_compat_extra_body: str = ""
+    # Muestreo propio del proveedor. Vacío = LLM_TEMPERATURE y sin top_p.
+    openai_compat_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    openai_compat_top_p: float | None = Field(default=None, gt=0.0, le=1.0)
 
     # Recuperación (Etapa 2)
     retrieval_top_k: int = Field(default=5, ge=1, le=50)
@@ -134,6 +137,14 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("openai_compat_temperature", "openai_compat_top_p", mode="before")
+    @classmethod
+    def _vacio_es_none(cls, value: object) -> object:
+        # Docker Compose pasa `${VAR:-}` como cadena vacía.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("openai_compat_extra_body")
     @classmethod
     def _validar_extra_body(cls, value: str) -> str:
@@ -167,6 +178,13 @@ class Settings(BaseSettings):
             if self.openai_compat_extra_body
             else {}
         )
+
+    @property
+    def openai_compat_effective_temperature(self) -> float:
+        """Temperatura del proveedor compatible (por defecto, `LLM_TEMPERATURE`)."""
+        if self.openai_compat_temperature is None:
+            return self.llm_temperature
+        return self.openai_compat_temperature
 
     def chat_timeout_seconds(self, provider: str) -> float:
         """Timeout por intento del proveedor de chat indicado.

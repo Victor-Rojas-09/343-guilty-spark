@@ -37,7 +37,7 @@ from spark_rag.rag.evaluation import (
     pause_seconds_arg,
     summarize,
 )
-from spark_rag.rag.llm import chat_model_name, get_chat_model
+from spark_rag.rag.llm import chat_model_name, generation_settings, get_chat_model
 from spark_rag.rag.prompts import PROMPT_VERSION
 from spark_rag.rag.retriever import build_retriever
 
@@ -146,7 +146,16 @@ def main() -> int:
             "eval_set_version": eval_set.version,
             "chat_provider": settings.llm_provider,
             "chat_model": chat_model_name(settings),
-            "temperature": settings.llm_temperature,
+            "temperature": generation_settings(settings)["temperature"],
+            # Modelo, temperature, top_p y structured_mode de cada proveedor de la
+            # cadena (principal y respaldos), sin credenciales.
+            "chat_generation": [
+                generation_settings(settings, provider)
+                for provider in [
+                    settings.llm_provider,
+                    *settings.llm_fallback_provider_list,
+                ]
+            ],
             "pause_seconds": args.pause,
             "embedding_model": settings.gemini_embedding_model,
             "embedding_dim": settings.embedding_dim,

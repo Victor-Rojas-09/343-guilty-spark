@@ -12,6 +12,7 @@ from spark_rag.rag.llm import (
     build_chat_model,
     chat_model_name,
     disable_internal_retry,
+    generation_settings,
     supported_providers,
 )
 
@@ -235,3 +236,72 @@ def test_gemini_usa_el_timeout_corto_solo_con_respaldo() -> None:
     )
     assert sin_respaldo.timeout == 90
     assert con_respaldo.timeout == 30
+
+
+def _payload(model) -> dict:
+    from langchain_core.messages import HumanMessage
+
+    return model._get_request_payload([HumanMessage(content="hola")])
+
+
+def test_openai_compat_con_muestreo_propio() -> None:
+    model = build_chat_model(
+        _compat(
+            llm_temperature=0.4, openai_compat_temperature=1.0, openai_compat_top_p=0.95
+        )
+    )
+    payload = _payload(model)
+
+    assert payload["temperature"] == 1.0
+    assert payload["top_p"] == 0.95
+
+
+def test_openai_compat_sin_muestreo_propio_usa_llm_temperature() -> None:
+    payload = _payload(build_chat_model(_compat(llm_temperature=0.4)))
+
+    assert payload["temperature"] == 0.4
+    assert "top_p" not in payload
+
+
+def test_gemini_no_usa_el_muestreo_de_openai_compat() -> None:
+    model = build_chat_model(
+        _settings(
+            gemini_api_key="k",
+            llm_temperature=0.4,
+            openai_compat_temperature=1.0,
+            openai_compat_top_p=0.95,
+        )
+    )
+    assert model.temperature == 0.4
+    assert model.top_p is None
+
+
+def test_parametros_de_generacion_para_el_informe() -> None:
+    settings = _compat(
+        llm_provider="gemini",
+        llm_fallback_providers="openai_compat",
+        llm_temperature=0.4,
+        openai_compat_temperature=1.0,
+        openai_compat_top_p=0.95,
+    )
+
+    assert generation_settings(settings) == {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "temperature": 0.4,
+        "top_p": None,
+        "structured_mode": "native",
+        "max_output_tokens": 1024,
+        "timeout_seconds": 30,
+    }
+    compat = generation_settings(settings, "openai_compat")
+    assert compat == {
+        "provider": "openai_compat",
+        "model": "nvidia:deepseek-ai/modelo-falso",
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "structured_mode": "function_calling",
+        "max_output_tokens": 4096,
+        "timeout_seconds": 60,
+    }
+    assert FAKE_KEY not in repr(compat)

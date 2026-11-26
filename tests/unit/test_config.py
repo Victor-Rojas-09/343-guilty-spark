@@ -200,3 +200,55 @@ def test_clave_openai_compat_no_aparece_en_repr(
     assert settings.openai_compat_api_key.get_secret_value() == "nvapi-FAKEFAKEFAKEFAKE"
     assert "nvapi-FAKE" not in repr(settings)
     assert "nvapi-FAKE" not in str(settings)
+
+
+def test_muestreo_openai_compat_vacio_usa_el_comportamiento_actual(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Docker Compose pasa las variables vacías como cadena vacía.
+    monkeypatch.setenv("OPENAI_COMPAT_TEMPERATURE", "")
+    monkeypatch.setenv("OPENAI_COMPAT_TOP_P", "  ")
+    settings = Settings(_env_file=None, llm_temperature=0.4)
+
+    assert settings.openai_compat_temperature is None
+    assert settings.openai_compat_top_p is None
+    assert settings.openai_compat_effective_temperature == 0.4
+
+
+def test_muestreo_openai_compat_desde_el_entorno(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_COMPAT_TEMPERATURE", "1.0")
+    monkeypatch.setenv("OPENAI_COMPAT_TOP_P", "0.95")
+    settings = Settings(_env_file=None, llm_temperature=0.4)
+
+    assert settings.openai_compat_effective_temperature == 1.0
+    assert settings.openai_compat_top_p == 0.95
+    # La temperatura de Gemini no cambia.
+    assert settings.llm_temperature == 0.4
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"openai_compat_temperature": 2.5},
+        {"openai_compat_temperature": -0.1},
+        {"openai_compat_top_p": 0},
+        {"openai_compat_top_p": 1.5},
+        {"openai_compat_top_p": "alto"},
+    ],
+)
+def test_rechaza_muestreo_fuera_de_rango(kwargs: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **kwargs)
+
+
+def test_env_example_se_lee_con_el_extra_body_y_el_muestreo() -> None:
+    from spark_rag.config import PROJECT_ROOT
+
+    settings = Settings(_env_file=PROJECT_ROOT / ".env.example")
+
+    assert settings.openai_compat_extra_body_dict == {"reasoning_effort": "low"}
+    assert settings.openai_compat_effective_temperature == 1.0
+    assert settings.openai_compat_top_p == 0.95
+    assert settings.llm_temperature == 0.4
