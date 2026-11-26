@@ -8,7 +8,7 @@ de datos: cada pregunta se responde con la cadena RAG y las preguntas con
 Uso:
     python scripts/evaluate.py
     python scripts/evaluate.py --questions tests/eval/spark_questions.json \
-        --output-dir reports/eval --pause 6
+        --output-dir reports/eval --pause 20
 """
 
 from __future__ import annotations
@@ -30,7 +30,13 @@ from spark_rag import __version__
 from spark_rag.config import get_settings
 from spark_rag.db.connection import check_database, get_connection
 from spark_rag.rag.chain import build_chain
-from spark_rag.rag.evaluation import evaluate, load_eval_set, summarize
+from spark_rag.rag.evaluation import (
+    MIN_PAUSE_SECONDS,
+    evaluate,
+    load_eval_set,
+    pause_seconds_arg,
+    summarize,
+)
 from spark_rag.rag.llm import chat_model_name, get_chat_model
 from spark_rag.rag.prompts import PROMPT_VERSION
 from spark_rag.rag.retriever import build_retriever
@@ -48,9 +54,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--pause",
-        type=float,
-        default=0.0,
-        help="Segundos de espera entre preguntas (cuotas de Gemini).",
+        type=pause_seconds_arg,
+        default=MIN_PAUSE_SECONDS,
+        help=(
+            "Segundos de espera entre preguntas para respetar el límite por "
+            f"minuto de Gemini (mínimo y valor por defecto: {MIN_PAUSE_SECONDS:g})."
+        ),
     )
     parser.add_argument("--log-level", default="WARNING")
     return parser.parse_args()
@@ -138,6 +147,7 @@ def main() -> int:
             "chat_provider": settings.llm_provider,
             "chat_model": chat_model_name(settings),
             "temperature": settings.llm_temperature,
+            "pause_seconds": args.pause,
             "embedding_model": settings.gemini_embedding_model,
             "embedding_dim": settings.embedding_dim,
             "collection": settings.collection_name,

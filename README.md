@@ -493,8 +493,11 @@ y una fuera de dominio.
 
 ```bash
 # Con el corpus ingerido, PostgreSQL accesible y GEMINI_API_KEY configurada
-python scripts/evaluate.py --pause 5
+python scripts/evaluate.py
 ```
+
+Entre pregunta y pregunta espera 15 s por defecto (`--pause`, mínimo 15) para
+no superar el límite de 5 peticiones por minuto del plan gratuito de Gemini.
 
 El script usa la cadena RAG real (Gemini), aplica comprobaciones automáticas
 (fuentes esperadas, marcadores de laguna, menciones, longitud máxima) y guarda

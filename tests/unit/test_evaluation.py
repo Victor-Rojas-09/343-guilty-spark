@@ -1,3 +1,4 @@
+import argparse
 import json
 from pathlib import Path
 
@@ -5,10 +6,12 @@ import pytest
 
 from spark_rag.rag.chain import RagResult
 from spark_rag.rag.evaluation import (
+    MIN_PAUSE_SECONDS,
     EvalQuestion,
     EvalSet,
     evaluate,
     load_eval_set,
+    pause_seconds_arg,
     run_checks,
     summarize,
 )
@@ -135,3 +138,30 @@ def test_evaluate_encadena_historial_y_registra_errores() -> None:
     assert results[2]["error"] == "RuntimeError"
     assert results[0]["manual_review"] == "pendiente"
     assert summarize(results) == {"PASS": 2, "FAIL": 0, "ERROR": 1}
+
+
+def test_pausa_minima_entre_llamadas() -> None:
+    assert MIN_PAUSE_SECONDS == 15
+    assert pause_seconds_arg("15") == 15
+    assert pause_seconds_arg("20.5") == 20.5
+    for value in ("5", "0", "-1", "abc"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            pause_seconds_arg(value)
+
+
+def test_evaluate_espera_entre_preguntas(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr("spark_rag.rag.evaluation.time.sleep", sleeps.append)
+    eval_set = EvalSet(
+        version="t",
+        gap_markers=[],
+        questions=[
+            EvalQuestion(id=q, coverage="c", question=q, expected_behavior="")
+            for q in ("a", "b", "c")
+        ],
+    )
+
+    evaluate(eval_set, lambda q, h: _result(q), pause_seconds=MIN_PAUSE_SECONDS)
+
+    # Sin espera antes de la primera; 15 s antes de cada una de las siguientes.
+    assert sleeps == [MIN_PAUSE_SECONDS, MIN_PAUSE_SECONDS]

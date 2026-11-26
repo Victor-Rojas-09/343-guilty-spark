@@ -8,6 +8,7 @@ lleva `manual_review = "pendiente"` para completarlo a mano.
 
 from __future__ import annotations
 
+import argparse
 import json
 import time
 import unicodedata
@@ -18,6 +19,26 @@ from typing import Any
 
 from spark_rag.rag.chain import RagResult
 from spark_rag.rag.history import ChatTurn
+
+MIN_PAUSE_SECONDS = 15.0
+"""Espera mínima entre llamadas reales a Gemini.
+
+El plan gratuito de `gemini-3.8-flash` admite 5 peticiones por minuto; 15 s de
+separación deja margen para un reintento interno del cliente.
+"""
+
+
+def pause_seconds_arg(value: str) -> float:
+    """Tipo de argparse para `--pause`: exige al menos `MIN_PAUSE_SECONDS`."""
+    try:
+        seconds = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"'{value}' no es un número") from exc
+    if seconds < MIN_PAUSE_SECONDS:
+        raise argparse.ArgumentTypeError(
+            f"la pausa mínima entre llamadas es {MIN_PAUSE_SECONDS:g} s"
+        )
+    return seconds
 
 
 @dataclass(frozen=True)
