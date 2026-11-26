@@ -37,7 +37,7 @@ def test_valores_por_defecto_de_etapa_2() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.llm_provider == "gemini"
-    assert settings.gemini_chat_model == "gemini-2.5-flash"
+    assert settings.gemini_chat_model == "gemini-3.8-flash"
     assert settings.retrieval_top_k == 5
     assert 0.0 <= settings.retrieval_min_similarity <= 1.0
     assert settings.retrieval_category_list == []
@@ -82,3 +82,16 @@ def test_lee_variables_de_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.gemini_chat_model == "otro-modelo"
     assert settings.retrieval_top_k == 8
     assert settings.retrieval_category_list == ["community"]
+
+
+def test_env_file_sobrescribe_el_modelo_por_defecto(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "GEMINI_CHAT_MODEL=gemini-flash-latest\nLLM_TIMEOUT_SECONDS=45\n",
+        encoding="utf-8",
+    )
+    settings = Settings(_env_file=env_file)
+
+    assert Settings(_env_file=None).gemini_chat_model == "gemini-3.8-flash"
+    assert settings.gemini_chat_model == "gemini-flash-latest"
+    assert settings.llm_timeout_seconds == 45

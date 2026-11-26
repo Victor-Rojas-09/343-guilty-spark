@@ -49,10 +49,10 @@ class Settings(BaseSettings):
 
     # Modelo de chat (Etapa 2). El proveedor se resuelve en `rag/llm.py`.
     llm_provider: str = "gemini"
-    gemini_chat_model: str = "gemini-2.5-flash"
+    gemini_chat_model: str = "gemini-3.8-flash"
     llm_temperature: float = Field(default=0.4, ge=0.0, le=2.0)
     llm_max_output_tokens: int = Field(default=1024, ge=64, le=65536)
-    llm_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+    llm_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
     llm_max_retries: int = Field(default=2, ge=0, le=10)
 
     # Recuperación (Etapa 2)

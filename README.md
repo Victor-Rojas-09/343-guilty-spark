@@ -579,6 +579,12 @@ Cobertura de la Etapa 1:
 
 - **Etapa temporal del personaje:** Spark actual con memoria de toda su
   cronología (manual §2.5); la recuperación aporta el contexto histórico.
+- **Modelo de chat:** `gemini-3.8-flash`. `gemini-2.5-flash` devuelve 404 para
+  claves nuevas; `gemini-3.8-flash` es el modelo que recomienda la API, tiene
+  versión fija (a diferencia de los alias `*-latest`, que cambian sin aviso y
+  romperían la comparabilidad de las evaluaciones) y respeta la salida
+  estructurada. Su latencia es muy variable (medidas de 3 a 65 s), por eso
+  `LLM_TIMEOUT_SECONDS=90`. Se sobrescribe con `GEMINI_CHAT_MODEL` en `.env`.
 - **Umbral de similitud:** `RETRIEVAL_MIN_SIMILARITY=0.68`. Con
   `gemini-embedding-001` las similitudes están comprimidas: en el corpus
   actual los fragmentos pertinentes puntúan ~0.69-0.86 y las consultas ajenas

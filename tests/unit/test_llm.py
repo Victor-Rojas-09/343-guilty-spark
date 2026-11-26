@@ -30,7 +30,7 @@ def test_gemini_recibe_los_parametros_configurados() -> None:
     model = build_chat_model(
         _settings(
             gemini_api_key="clave-de-prueba",
-            gemini_chat_model="gemini-2.5-flash",
+            gemini_chat_model="gemini-3.8-flash",
             llm_temperature=0.2,
             llm_max_output_tokens=512,
             llm_timeout_seconds=12,
@@ -39,7 +39,7 @@ def test_gemini_recibe_los_parametros_configurados() -> None:
     )
 
     assert isinstance(model, ChatGoogleGenerativeAI)
-    assert model.model.endswith("gemini-2.5-flash")
+    assert model.model.endswith("gemini-3.8-flash")
     assert model.temperature == 0.2
     assert model.max_output_tokens == 512
     assert model.timeout == 12
