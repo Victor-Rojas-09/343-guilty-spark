@@ -107,7 +107,8 @@ def test_respaldo_desactivado_por_defecto() -> None:
     assert settings.openai_compat_api_key.get_secret_value() == ""
     assert settings.openai_compat_chat_model == ""
     assert settings.openai_compat_label == "nvidia"
-    assert settings.openai_compat_structured_mode == "auto"
+    assert settings.openai_compat_structured_mode == "function_calling"
+    assert settings.openai_compat_max_output_tokens == 4096
     assert settings.openai_compat_extra_body_dict == {}
 
 
@@ -166,6 +167,8 @@ def test_extra_body_json_valido() -> None:
         {"openai_compat_extra_body": "[1, 2]"},
         {"openai_compat_base_url": "integrate.api.nvidia.com/v1"},
         {"openai_compat_structured_mode": "xml"},
+        {"openai_compat_structured_mode": "auto"},
+        {"openai_compat_structured_mode": "json_mode"},
         {"llm_fallback_timeout_seconds": 0},
         {"llm_primary_cooldown_seconds": -1},
         {"openai_compat_timeout_seconds": 0},

@@ -22,7 +22,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Modos de salida estructurada del proveedor compatible con OpenAI.
-STRUCTURED_MODES = ("auto", "function_calling", "json_mode", "prompt")
+STRUCTURED_MODES = ("function_calling", "prompt")
 
 
 class Settings(BaseSettings):
@@ -71,9 +71,10 @@ class Settings(BaseSettings):
     openai_compat_api_key: SecretStr = SecretStr("")
     openai_compat_chat_model: str = ""
     openai_compat_label: str = "nvidia"
-    openai_compat_structured_mode: str = "auto"
+    openai_compat_structured_mode: str = "function_calling"
     openai_compat_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
-    openai_compat_max_output_tokens: int = Field(default=2048, ge=64, le=65536)
+    # Incluye los tokens de razonamiento: con poco margen el texto puede quedar vacío.
+    openai_compat_max_output_tokens: int = Field(default=4096, ge=64, le=65536)
     # Objeto JSON opcional que se envía tal cual (p. ej. desactivar el razonamiento).
     openai_compat_extra_body: str = ""
 

@@ -6,7 +6,8 @@ estructurada `{reply, mood}`.
 
 La salida estructurada se pide con `include_raw=True`: si el modelo no respeta
 el esquema, se recupera el texto crudo como `reply` y `mood` cae a `thinking`
-en lugar de fallar la petición.
+en lugar de fallar la petición. El esquema, el parser y los modos del
+proveedor compatible con OpenAI están en `rag/structured.py`.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from typing import Any
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
-from pydantic import BaseModel, Field
 
 from spark_rag.rag.errors import (
     LLMUnavailable,
@@ -27,7 +27,7 @@ from spark_rag.rag.errors import (
     describe_error,
 )
 from spark_rag.rag.history import ChatTurn
-from spark_rag.rag.mood import DEFAULT_MOOD, Mood, normalize_mood
+from spark_rag.rag.mood import Mood
 from spark_rag.rag.prompts import build_messages
 from spark_rag.rag.sources import (
     RetrievedChunk,
@@ -36,19 +36,19 @@ from spark_rag.rag.sources import (
     source_details,
 )
 
+# Reexportados: el esquema y el parser viven en `structured`.
+from spark_rag.rag.structured import SparkOutput, parse_generation
+
+__all__ = [
+    "RagResult",
+    "SparkOutput",
+    "SparkRagChain",
+    "build_chain",
+    "build_generator",
+    "parse_generation",
+]
+
 logger = logging.getLogger(__name__)
-
-
-class SparkOutput(BaseModel):
-    """Esquema que se exige al modelo de chat."""
-
-    reply: str = Field(
-        description="Respuesta de 343 Guilty Spark en primera persona y en personaje."
-    )
-    mood: Mood = Field(
-        description="Estado de ánimo de la respuesta: idle, thinking, "
-        "enthusiastic o rampant."
-    )
 
 
 @dataclass(frozen=True)
@@ -71,54 +71,6 @@ class RagResult:
     @property
     def source_details(self) -> list[dict[str, Any]]:
         return source_details(self.chunks)
-
-
-def _text_from_message(message: Any) -> str:
-    """Extrae texto de un `AIMessage` (contenido plano o por partes)."""
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [
-            part.get("text", "") if isinstance(part, dict) else str(part)
-            for part in content
-        ]
-        return "".join(parts)
-    return ""
-
-
-def parse_generation(output: Any) -> tuple[str, Mood, bool]:
-    """Normaliza la salida del modelo a `(reply, mood, structured)`.
-
-    Acepta un `SparkOutput`, un diccionario `include_raw` de LangChain
-    (`raw`/`parsed`/`parsing_error`) o un mensaje de chat simple.
-    """
-    if isinstance(output, SparkOutput):
-        return output.reply.strip(), normalize_mood(output.mood), True
-
-    if isinstance(output, dict) and "raw" in output:
-        parsed = output.get("parsed")
-        if isinstance(parsed, SparkOutput):
-            return parsed.reply.strip(), normalize_mood(parsed.mood), True
-        if isinstance(parsed, dict) and parsed.get("reply"):
-            return (
-                str(parsed["reply"]).strip(),
-                normalize_mood(parsed.get("mood")),
-                True,
-            )
-
-        raw = output.get("raw")
-        for call in getattr(raw, "tool_calls", None) or []:
-            args = call.get("args") or {}
-            if args.get("reply"):
-                return (
-                    str(args["reply"]).strip(),
-                    normalize_mood(args.get("mood")),
-                    False,
-                )
-        return _text_from_message(raw).strip(), DEFAULT_MOOD, False
-
-    return _text_from_message(output).strip(), DEFAULT_MOOD, False
 
 
 class SparkRagChain:
