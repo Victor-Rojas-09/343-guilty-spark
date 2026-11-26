@@ -1,8 +1,10 @@
 # 343 Guilty Spark // Asistente conversacional con RAG
 
 Backend del asistente basado en el corpus documental de **343 Guilty Spark**.
-Esta entrega implementa únicamente la **Etapa 1: infraestructura e ingesta
-documental**:
+Esta entrega implementa la **Etapa 1 (infraestructura e ingesta documental)**
+y la **Etapa 2 (motor RAG, personalidad, sesiones y API)**.
+
+Etapa 1:
 
 - PostgreSQL 16 + `pgvector` reproducible con Docker Compose.
 - Configuración centralizada y secretos fuera del repositorio.
@@ -11,11 +13,21 @@ documental**:
 - Embeddings de Gemini (`gemini-embedding-001`) validados antes de persistir.
 - Persistencia vectorial con `langchain-postgres`.
 - Control SHA256 por archivo para evitar duplicados y reindexar cambios.
-- API FastAPI mínima con `GET /health`.
+- `GET /health`.
 
-El chat, la personalidad, las sesiones y el frontend quedan para las etapas
-siguientes. `src/spark_rag/rag/` y `src/spark_rag/tts/` se mantienen como
-placeholders aislados.
+Etapa 2:
+
+- Recuperación semántica en pgvector con top-k, umbral de similitud y filtros.
+- Jerarquía de fuentes (canon, transcripciones, referencia, comunidad).
+- System Prompt versionado de 343 Guilty Spark y tratamiento de lagunas.
+- Cadena RAG de LangChain con salida estructurada `{reply, mood}`.
+- Sesiones e historial persistidos en PostgreSQL, aislados por `session_id`.
+- `POST /api/chat` con contrato JSON `reply`, `mood`, `sources`, `audio_url`.
+- Set de preguntas de evaluación del personaje y registro de resultados.
+
+El frontend (Etapa 3) y el TTS (Etapa 4) quedan para las etapas siguientes;
+`src/spark_rag/tts/` se mantiene como placeholder aislado y `audio_url` es
+siempre `null`.
 
 ---
 
@@ -43,7 +55,10 @@ placeholders aislados.
 ├── frontend/                 # Placeholder para la Etapa 3
 ├── scripts/
 │   ├── ingest.py
-│   └── test_search.py
+│   ├── test_search.py
+│   └── evaluate.py
+├── reports/
+│   └── eval/                 # Informes de evaluación del personaje
 ├── src/
 │   └── spark_rag/
 │       ├── __init__.py
@@ -51,7 +66,8 @@ placeholders aislados.
 │       ├── db/
 │       │   ├── __init__.py
 │       │   ├── connection.py
-│       │   └── models.py
+│       │   ├── models.py
+│       │   └── sessions.py
 │       ├── ingestion/
 │       │   ├── __init__.py
 │       │   ├── loaders.py
@@ -61,14 +77,28 @@ placeholders aislados.
 │       │   └── pipeline.py
 │       ├── api/
 │       │   ├── __init__.py
-│       │   └── main.py
+│       │   ├── main.py
+│       │   ├── chat.py
+│       │   └── schemas.py
 │       ├── rag/
-│       │   └── __init__.py
+│       │   ├── __init__.py
+│       │   ├── retriever.py
+│       │   ├── sources.py
+│       │   ├── prompts.py
+│       │   ├── llm.py
+│       │   ├── chain.py
+│       │   ├── mood.py
+│       │   ├── history.py
+│       │   ├── service.py
+│       │   ├── errors.py
+│       │   └── evaluation.py
 │       └── tts/
 │           └── __init__.py
 └── tests/
     ├── unit/
-    └── integration/
+    ├── integration/
+    └── eval/
+        └── spark_questions.json
 ```
 
 ### Responsabilidades
@@ -83,7 +113,20 @@ placeholders aislados.
 | `ingestion/metadata.py` | `source`, `category`, `page`, `source_type`, SHA256 e IDs estables. |
 | `ingestion/embeddings.py` | Embeddings Gemini con validación de dimensión y finitud. |
 | `ingestion/pipeline.py` | Orquestación idempotente y reporte por archivo. |
-| `api/main.py` | `GET /health` verificando PostgreSQL y pgvector. |
+| `db/sessions.py` | Tablas `chat_sessions`/`chat_messages` y repositorio de sesiones. |
+| `rag/retriever.py` | Búsqueda en pgvector: top-k, umbral de similitud y filtros por categoría/fuente. |
+| `rag/sources.py` | Clase de autoridad de cada fragmento, `sources`/`source_details` y contexto delimitado. |
+| `rag/prompts.py` | System Prompt versionado (`PROMPT_VERSION`) y construcción de mensajes. |
+| `rag/llm.py` | Fábrica del modelo de chat según `LLM_PROVIDER` (hoy Gemini). |
+| `rag/chain.py` | Cadena LangChain: recuperación → prompt → salida estructurada `{reply, mood}`. |
+| `rag/mood.py` | Conjunto controlado de `mood` y normalización. |
+| `rag/history.py` | Turnos de conversación y recorte del historial enviado al modelo. |
+| `rag/service.py` | Orquestación de un turno: sesión, historial, cadena y persistencia. |
+| `rag/errors.py` | Errores de dominio que la API traduce a respuestas controladas. |
+| `rag/evaluation.py` | Comprobaciones del set de evaluación del personaje. |
+| `api/main.py` | Aplicación FastAPI, `GET /health` y manejo de errores sin trazas. |
+| `api/chat.py` | `POST /api/chat`. |
+| `api/schemas.py` | Contrato JSON de solicitud, respuesta y error. |
 
 ---
 
@@ -123,6 +166,18 @@ Variables principales:
 | `COLLECTION_NAME` | Colección de `langchain-postgres`. |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | Tamaño y solape del chunking. |
 | `LOG_LEVEL` | Nivel de logging. |
+| `LLM_PROVIDER` | Proveedor del modelo de chat (`gemini`). |
+| `GEMINI_CHAT_MODEL` | Modelo de generación de Gemini. |
+| `LLM_TEMPERATURE` / `LLM_MAX_OUTPUT_TOKENS` | Creatividad y longitud máxima de la respuesta. |
+| `LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` | Tiempo máximo y reintentos por llamada al modelo. |
+| `RETRIEVAL_TOP_K` | Fragmentos recuperados por pregunta. |
+| `RETRIEVAL_MIN_SIMILARITY` | Similitud coseno mínima (1 − distancia) para usar un fragmento. |
+| `RETRIEVAL_CATEGORIES` | CSV de categorías permitidas; vacío = todas. |
+| `CHAT_HISTORY_MAX_MESSAGES` / `CHAT_HISTORY_MAX_CHARS` | Límite del historial enviado al modelo. |
+| `CHAT_MESSAGE_MAX_CHARS` | Longitud máxima del mensaje del usuario. |
+
+Todas las variables se leen en `config.py` y también se pasan al servicio
+`api` desde `docker-compose.yml`.
 
 `.env` está ignorado por git. El repositorio solo incluye valores de ejemplo no
 secretos en `.env.example`.
@@ -166,7 +221,7 @@ Respuesta esperada con todo operativo:
 {
   "status": "ok",
   "service": "spark-rag",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "database": true,
   "pgvector": true,
   "pgvector_version": "0.8.x"
@@ -301,6 +356,159 @@ registros trazables.
 
 ---
 
+## Chat: `POST /api/chat` (Etapa 2)
+
+### Contrato
+
+Solicitud:
+
+```json
+{
+  "message": "¿Qué relación existe entre Chakas y tú?",
+  "session_id": "3f0c9a52-6a1e-4d1b-9a7e-2a4f3c1b5d10"
+}
+```
+
+- `message`: obligatorio, no vacío, máximo `CHAT_MESSAGE_MAX_CHARS`.
+- `session_id`: opcional. Si se omite, el backend crea una sesión nueva y
+  devuelve su UUID; las siguientes llamadas deben reenviarlo.
+
+Respuesta `200`:
+
+```json
+{
+  "reply": "...respuesta en personaje...",
+  "mood": "thinking",
+  "sources": ["history/01_Dossier_de_lore_343_Guilty_Spark.pdf"],
+  "audio_url": null,
+  "session_id": "3f0c9a52-6a1e-4d1b-9a7e-2a4f3c1b5d10",
+  "source_details": [
+    {
+      "source": "history/01_Dossier_de_lore_343_Guilty_Spark.pdf",
+      "category": "history",
+      "page": 2,
+      "source_class": "canon",
+      "similarity": 0.8521,
+      "work": null, "edition": null, "level": null,
+      "terminal": null, "scene": null, "speaker": null
+    }
+  ]
+}
+```
+
+- `mood` pertenece siempre al conjunto `idle | thinking | enthusiastic |
+  rampant`. Lo propone el modelo mediante salida estructurada y el backend lo
+  valida; un valor inválido se convierte en `thinking`.
+- `sources` mantiene el formato del manual (nombres de archivo). Si no hay
+  evidencia suficiente, `sources` y `source_details` van vacíos: nunca se
+  inventan referencias.
+- `source_details` añade página, categoría, clase de autoridad, similitud y,
+  solo si existen en un sidecar, obra/edición/nivel/terminal/escena/hablante.
+- `audio_url` es `null` hasta la Etapa 4.
+
+### Errores
+
+Todos los errores usan el cuerpo `{"error": "...", "detail": "..."}` sin
+trazas, rutas ni credenciales.
+
+| Código | `error` | Cuándo |
+| --- | --- | --- |
+| 422 | `invalid_request` | JSON inválido, `message` vacío/ausente/largo, `session_id` que no es UUID. |
+| 404 | `session_not_found` | `session_id` con formato válido que no existe. |
+| 503 | `llm_not_configured` | Falta `GEMINI_API_KEY` o el proveedor no está soportado. |
+| 503 | `llm_unavailable` | Gemini falla, agota la cuota, no responde a tiempo o devuelve vacío. |
+| 503 | `retrieval_unavailable` | pgvector o los embeddings de la consulta no están disponibles. |
+| 503 | `storage_unavailable` | No se puede leer o guardar el historial. |
+| 500 | `internal_error` | Error no previsto (el detalle solo va al log del backend). |
+
+### Ejemplo
+
+PowerShell:
+
+```powershell
+$body = @{ message = "¿Qué relación existe entre Chakas y tú?" } | ConvertTo-Json
+$r = Invoke-RestMethod -Uri http://localhost:8000/api/chat -Method Post `
+  -ContentType "application/json; charset=utf-8" -Body $body
+$r.reply
+# Segundo turno en la misma sesión
+$body = @{ message = "¿Y qué recuerdas de Erde-Tyrene?"; session_id = $r.session_id } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/api/chat -Method Post `
+  -ContentType "application/json; charset=utf-8" -Body $body
+```
+
+bash:
+
+```bash
+curl -s http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "¿Qué relación existe entre Chakas y tú?"}'
+```
+
+### Cómo responde Spark
+
+1. **Sesión:** se crea o se valida el `session_id` y se cargan sus últimos
+   `CHAT_HISTORY_MAX_MESSAGES` mensajes (máximo `CHAT_HISTORY_MAX_CHARS`).
+2. **Recuperación:** se busca en pgvector con el mensaje actual más el último
+   mensaje del usuario (para que las preguntas de seguimiento encuentren
+   contexto), con `RETRIEVAL_TOP_K`, `RETRIEVAL_MIN_SIMILARITY` y
+   `RETRIEVAL_CATEGORIES`.
+3. **Contexto:** los fragmentos se ordenan por autoridad y se envuelven en
+   bloques `<documento>` con su procedencia; el texto se escapa para que no
+   pueda inyectar instrucciones.
+4. **Generación:** System Prompt de Spark + historial + evidencia → Gemini con
+   salida estructurada `{reply, mood}`.
+5. **Persistencia:** el mensaje del usuario y la respuesta se guardan juntos en
+   una transacción solo si la generación tuvo éxito, con `mood`, fuentes,
+   versión del prompt y modelo.
+
+### Jerarquía de fuentes
+
+La clase de autoridad se deriva de la carpeta del corpus (o de
+`canon_status`, si un sidecar lo define):
+
+| Carpeta | `source_class` | Tratamiento en el prompt |
+| --- | --- | --- |
+| `history/` | `canon` | Dossier basado en canon oficial; base para afirmar hechos. |
+| `dialogs/` | `transcripciones` | Localizador de escenas; citar obra/nivel y no reproducir guiones. |
+| `sources/` | `referencia` | Catálogo y referencias secundarias (Halopedia). |
+| `community/` | `comunidad` | Interpretación de fans: nunca se presenta como canon. |
+
+### Personaje
+
+`rag/prompts.py` fija la etapa temporal por defecto: **Spark actual** (tras su
+arco con Rion Forge), que recuerda toda su cronología —Chakas, Instalación 07,
+conversión, aislamiento, Halo CE, Threshold/Oráculo, Halo 3 y fragmentos
+posteriores— con la voz clásica del Monitor. Chakas, 343 Guilty Spark, el
+Oráculo y Spark se tratan como etapas de una misma existencia con matices.
+Cada cambio del prompt debe incrementar `PROMPT_VERSION`.
+
+---
+
+## Evaluación del personaje
+
+`tests/eval/spark_questions.json` contiene las preguntas del manual (§4.3 y
+T2-01…T2-05): identidad, protocolo, aislamiento, Halo 3, evolución, fuentes,
+laguna, diálogo, un hecho cubierto, un localizador, una pregunta de seguimiento
+y una fuera de dominio.
+
+```bash
+# Con el corpus ingerido, PostgreSQL accesible y GEMINI_API_KEY configurada
+python scripts/evaluate.py --pause 5
+```
+
+El script usa la cadena RAG real (Gemini), aplica comprobaciones automáticas
+(fuentes esperadas, marcadores de laguna, menciones, longitud máxima) y guarda
+un informe en `reports/eval/eval_<fecha>_<prompt>.json` con: fecha, versión de
+código, commit, versión del prompt, modelo de chat y de embeddings,
+documentos indexados, parámetros de recuperación y PASS/FAIL por pregunta.
+Cada resultado incluye `manual_review: "pendiente"`: las comprobaciones
+automáticas son orientativas y el comportamiento esperado se revisa a mano.
+
+Repite la evaluación después de cambiar documentos, prompt, modelo o
+parámetros de recuperación (pruebas de regresión del manual §4.2).
+
+---
+
 ## Pruebas
 
 ```bash
@@ -312,9 +520,33 @@ RUN_INTEGRATION=1 pytest tests/integration
 ```
 
 Las pruebas de integración se omiten si `RUN_INTEGRATION` no vale `1`. No se
-hacen llamadas reales a Gemini en las pruebas unitarias.
+hacen llamadas reales a Gemini en las pruebas unitarias ni de integración
+(la recuperación de integración usa embeddings falsos deterministas en una
+colección temporal).
 
-Cobertura actual de la Etapa 1:
+En PowerShell:
+
+```powershell
+pytest tests/unit
+$env:RUN_INTEGRATION=1; pytest tests/integration
+ruff check .
+```
+
+Cobertura de la Etapa 2:
+
+- Configuración nueva y sus validaciones.
+- Contrato JSON (`reply`, `mood`, `sources`, `audio_url`) y `mood` controlado.
+- Jerarquía de fuentes, deduplicación y contexto delimitado anti-inyección.
+- Recuperador: umbral, top-k y filtros (unitarias y contra pgvector real).
+- Contenido del System Prompt y separación sistema/historial/evidencia.
+- Fábrica del modelo de chat y errores de configuración.
+- Cadena RAG con dobles: con/sin evidencia, salida no estructurada y fallos.
+- Sesiones: persistencia, orden, límite e aislamiento (PostgreSQL real).
+- Servicio y `POST /api/chat`: sesiones nuevas/existentes/inexistentes,
+  validación, fallos de Gemini/BD y ausencia de trazas o secretos.
+- Comprobaciones del set de evaluación.
+
+Cobertura de la Etapa 1:
 
 - Limpieza y normalización de texto.
 - Construcción de metadatos y sidecars.
@@ -326,7 +558,7 @@ Cobertura actual de la Etapa 1:
 
 ---
 
-## Decisiones de esta etapa
+## Decisiones de la Etapa 1
 
 - **Dimensión de embeddings:** `EMBEDDING_DIM=768` por defecto. El modelo
   `gemini-embedding-001` entrega 3072 dimensiones si no se solicita reducción;
@@ -341,14 +573,34 @@ Cobertura actual de la Etapa 1:
   tabla de control; un documento inválido no detiene los demás.
 - **Categoría:** se deriva de la carpeta del corpus para mantener trazabilidad
   sin inventar clasificaciones canónicas.
-- **TTS y RAG:** permanecen aislados y vacíos a propósito.
+- **TTS:** permanece aislado y vacío a propósito.
+
+## Decisiones de la Etapa 2
+
+- **Etapa temporal del personaje:** Spark actual con memoria de toda su
+  cronología (manual §2.5); la recuperación aporta el contexto histórico.
+- **Umbral de similitud:** `RETRIEVAL_MIN_SIMILARITY=0.68`. Con
+  `gemini-embedding-001` las similitudes están comprimidas: en el corpus
+  actual los fragmentos pertinentes puntúan ~0.69-0.86 y las consultas ajenas
+  al dominio ~0.64-0.67. El umbral filtra lo ajeno; las lagunas dentro del
+  universo Halo las gestiona el prompt declarando el límite en personaje.
+- **`mood`:** salida estructurada del modelo con enum y valor por defecto
+  `thinking` si no se respeta el esquema.
+- **`sources`:** lista de nombres según el manual + `source_details` con
+  metadatos para la Etapa 3.
+- **Sesiones:** tablas propias (`chat_sessions`, `chat_messages`) en lugar de
+  `PostgresChatMessageHistory` para guardar última actividad, `mood`, fuentes,
+  versión de prompt y modelo por mensaje (§5.1). Un `session_id` desconocido
+  devuelve 404; no se crea en silencio.
+- **Consulta de recuperación:** mensaje actual + último mensaje del usuario,
+  sin una llamada extra al modelo para reescribir la pregunta.
+- **Retención de sesiones:** sin política de borrado todavía; debe decidirse
+  antes de abrir el uso a terceros.
 
 ---
 
 ## Próximas etapas
 
-- **Etapa 2:** recuperación, personalidad de Spark, sesiones, `POST /api/chat` y
-  contrato JSON con `reply`, `mood`, `sources` y `audio_url`.
 - **Etapa 3:** frontend desacoplado, chat, fuentes y estados visuales.
 - **Etapa 4:** TTS, audio y streaming opcional sin romper el chat de texto.
 
@@ -359,6 +611,10 @@ Cobertura actual de la Etapa 1:
 - `GEMINI_API_KEY` y credenciales de PostgreSQL solo viven en `.env`/entorno.
 - `.env` está ignorado por git; `.env.example` no contiene secretos.
 - La API no expone trazas internas ni la cadena de conexión.
-- Los documentos recuperados son evidencia, no instrucciones ejecutables.
+- Los documentos recuperados son evidencia, no instrucciones ejecutables: se
+  envían al modelo en bloques `<documento>` escapados, separados del System
+  Prompt.
+- Los errores de `/api/chat` no incluyen trazas, cadenas de conexión ni claves;
+  el servicio de chat no escribe en los logs el contenido de los mensajes.
 - En despliegues públicos faltan TLS, CORS restringido, límites de uso y
   retención de sesiones, que se abordarán más adelante.
