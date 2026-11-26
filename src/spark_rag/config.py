@@ -11,14 +11,18 @@ proceso.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Modos de salida estructurada del proveedor compatible con OpenAI.
+STRUCTURED_MODES = ("auto", "function_calling", "json_mode", "prompt")
 
 
 class Settings(BaseSettings):
@@ -55,6 +59,24 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
     llm_max_retries: int = Field(default=2, ge=0, le=10)
 
+    # Cadena de respaldo del chat. Vacía = sin respaldo (comportamiento previo).
+    llm_fallback_providers: str = ""
+    # Timeout del proveedor principal solo cuando hay respaldo configurado.
+    llm_fallback_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+    # Tras un fallo que activa el respaldo, se salta el principal este tiempo.
+    llm_primary_cooldown_seconds: float = Field(default=60.0, ge=0, le=3600)
+
+    # Proveedor genérico compatible con OpenAI (p. ej. NVIDIA).
+    openai_compat_base_url: str = "https://integrate.api.nvidia.com/v1"
+    openai_compat_api_key: SecretStr = SecretStr("")
+    openai_compat_chat_model: str = ""
+    openai_compat_label: str = "nvidia"
+    openai_compat_structured_mode: str = "auto"
+    openai_compat_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    openai_compat_max_output_tokens: int = Field(default=2048, ge=64, le=65536)
+    # Objeto JSON opcional que se envía tal cual (p. ej. desactivar el razonamiento).
+    openai_compat_extra_body: str = ""
+
     # Recuperación (Etapa 2)
     retrieval_top_k: int = Field(default=5, ge=1, le=50)
     retrieval_min_similarity: float = Field(default=0.68, ge=0.0, le=1.0)
@@ -86,6 +108,77 @@ class Settings(BaseSettings):
     @classmethod
     def _normalizar_proveedor(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("openai_compat_base_url")
+    @classmethod
+    def _validar_base_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not value.startswith(("https://", "http://")):
+            raise ValueError("OPENAI_COMPAT_BASE_URL debe empezar por http(s)://.")
+        return value
+
+    @field_validator("openai_compat_label")
+    @classmethod
+    def _normalizar_etiqueta(cls, value: str) -> str:
+        return value.strip() or "openai_compat"
+
+    @field_validator("openai_compat_structured_mode")
+    @classmethod
+    def _validar_modo_estructurado(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in STRUCTURED_MODES:
+            raise ValueError(
+                "OPENAI_COMPAT_STRUCTURED_MODE debe ser uno de: "
+                + ", ".join(STRUCTURED_MODES)
+            )
+        return value
+
+    @field_validator("openai_compat_extra_body")
+    @classmethod
+    def _validar_extra_body(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("OPENAI_COMPAT_EXTRA_BODY debe ser JSON válido.") from exc
+        if not isinstance(parsed, dict):
+            # pydantic solo convierte ValueError en ValidationError.
+            raise ValueError("OPENAI_COMPAT_EXTRA_BODY debe ser un objeto JSON.")  # noqa: TRY004
+        return value
+
+    @property
+    def llm_fallback_provider_list(self) -> list[str]:
+        """Proveedores de respaldo en orden, sin duplicados ni el principal."""
+        seen: list[str] = []
+        for item in self.llm_fallback_providers.split(","):
+            name = item.strip().lower()
+            if name and name != self.llm_provider and name not in seen:
+                seen.append(name)
+        return seen
+
+    @property
+    def openai_compat_extra_body_dict(self) -> dict[str, object]:
+        """`OPENAI_COMPAT_EXTRA_BODY` ya validado como diccionario."""
+        return (
+            json.loads(self.openai_compat_extra_body)
+            if self.openai_compat_extra_body
+            else {}
+        )
+
+    def chat_timeout_seconds(self, provider: str) -> float:
+        """Timeout por intento del proveedor de chat indicado.
+
+        El timeout corto (`LLM_FALLBACK_TIMEOUT_SECONDS`) solo se aplica al
+        principal cuando hay respaldo; sin respaldo no cambia nada.
+        """
+        provider = provider.strip().lower()
+        if provider == self.llm_provider and self.llm_fallback_provider_list:
+            return self.llm_fallback_timeout_seconds
+        if provider == "openai_compat":
+            return self.openai_compat_timeout_seconds
+        return self.llm_timeout_seconds
 
     @property
     def retrieval_category_list(self) -> list[str]:
