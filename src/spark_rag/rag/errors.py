@@ -50,6 +50,14 @@ class LLMUnavailable(SparkError):
     """El modelo de chat falló, agotó la cuota o no respondió a tiempo."""
 
 
+class EmptyModelResponse(SparkError):
+    """El modelo respondió, pero sin texto útil tras limpiar la salida.
+
+    Típico de un modelo de razonamiento que agota los tokens pensando. Cuenta
+    como fallo de disponibilidad: activa el proveedor de respaldo.
+    """
+
+
 class RetrievalUnavailable(SparkError):
     """No se pudo consultar la memoria documental (pgvector o embeddings)."""
 
