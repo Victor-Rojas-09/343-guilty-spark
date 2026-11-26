@@ -1,6 +1,9 @@
-"""Placeholder del motor RAG para la Etapa 2.
+"""Motor RAG de la Etapa 2.
 
-Aquí vivirán la cadena de recuperación, el prompt de personaje, la memoria de
-sesión y la integración con Gemini. En la Etapa 1 este paquete permanece
-deliberadamente vacío para aislar la infraestructura.
+* `retriever`: recuperación semántica en pgvector (top-k, umbral, filtros).
+* `sources`: jerarquía de fuentes y bloque de evidencia delimitado.
+* `prompts`: System Prompt versionado de 343 Guilty Spark.
+* `llm`: fábrica del modelo de chat configurable.
+* `chain`: cadena LangChain con salida estructurada `{reply, mood}`.
+* `history` / `service`: sesiones, límite de historial y orquestación.
 """

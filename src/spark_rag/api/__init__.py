@@ -1,4 +1,4 @@
-"""API REST de la Etapa 1 (sin endpoints de conversación todavía)."""
+"""API REST: `GET /health` y `POST /api/chat`."""
 
 from spark_rag.api.main import app
 
