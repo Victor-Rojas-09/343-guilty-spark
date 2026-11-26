@@ -18,6 +18,8 @@ langchain-community>=0.3,<0.4
 langchain-text-splitters>=0.3,<0.4
 langchain-postgres>=0.0.13,<0.1.0
 langchain-google-genai>=2.1,<3.0
+# Proveedor de chat compatible con OpenAI (p. ej. NVIDIA), opcional por .env.
+langchain-openai>=0.3,<0.4
 
 # --- Gemini (SDK oficial, dependencia de la integración LangChain) ---
 google-genai>=1.0,<2.0

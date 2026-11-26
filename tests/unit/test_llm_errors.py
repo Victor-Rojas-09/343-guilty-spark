@@ -1,8 +1,9 @@
 import httpx
+import openai
 import pytest
 from google.api_core import exceptions as google_exceptions
 
-from spark_rag.rag.errors import EmptyModelResponse, LLMUnavailable
+from spark_rag.rag.errors import EmptyModelResponse, LLMUnavailable, describe_error
 from spark_rag.rag.llm_errors import ErrorKind, classify_error, should_fallback
 
 
@@ -95,3 +96,41 @@ def test_cadena_circular_no_se_cuelga() -> None:
     first, second = ValueError("a"), ValueError("b")
     first.__cause__, second.__cause__ = second, first
     assert classify_error(first) is ErrorKind.OTHER
+
+
+_REQUEST = httpx.Request("POST", "https://example.test/v1/chat/completions")
+
+
+def _status_error(cls: type, status: int, message: str = "x") -> BaseException:
+    return cls(message, response=httpx.Response(status, request=_REQUEST), body=None)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (_status_error(openai.RateLimitError, 429), True),
+        (_status_error(openai.InternalServerError, 500), True),
+        (_status_error(openai.APIStatusError, 503), True),
+        (_status_error(openai.APIStatusError, 504), True),
+        (openai.APITimeoutError(request=_REQUEST), True),
+        (openai.APIConnectionError(request=_REQUEST), True),
+        (_status_error(openai.AuthenticationError, 401), False),
+        (_status_error(openai.PermissionDeniedError, 403), False),
+        (_status_error(openai.NotFoundError, 404), False),
+        (_status_error(openai.BadRequestError, 400), False),
+    ],
+)
+def test_excepciones_reales_de_openai(error: BaseException, expected: bool) -> None:
+    assert should_fallback(error) is expected
+
+
+def test_motivo_de_error_de_openai_sin_la_clave() -> None:
+    error = _status_error(
+        openai.AuthenticationError,
+        401,
+        "Error code: 401 - Incorrect API key provided: nvapi-FAKEFAKEFAKEFAKE",
+    )
+    reason = describe_error(error)
+
+    assert "401" in reason
+    assert "nvapi-FAKE" not in reason

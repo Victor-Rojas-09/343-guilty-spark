@@ -1,9 +1,18 @@
 """Fábrica del modelo de chat (RAG-02).
 
 El resto del sistema depende solo de `BaseChatModel` de LangChain; el proveedor
-y el modelo se eligen por configuración (`LLM_PROVIDER`, `GEMINI_CHAT_MODEL`).
-Para añadir otro proveedor basta con registrar un constructor en
-`_PROVIDERS`.
+y el modelo se eligen por configuración (`LLM_PROVIDER`, `GEMINI_CHAT_MODEL`,
+`OPENAI_COMPAT_*`). Para añadir otro proveedor basta con registrar un
+constructor en `_PROVIDERS`.
+
+Proveedores:
+- `gemini`: `ChatGoogleGenerativeAI` (langchain-google-genai).
+- `openai_compat`: cualquier API compatible con OpenAI (p. ej. NVIDIA) vía
+  `BaseChatOpenAI` de langchain-openai. Se usa la clase base y no `ChatOpenAI`
+  porque esta renombra `max_tokens` a `max_completion_tokens` y aplica ajustes
+  propios de OpenAI que los servidores compatibles no siempre aceptan.
+
+Las dependencias de cada proveedor se importan solo al construirlo.
 
 `LLM_MAX_RETRIES` debe ser la única política de reintentos: el cliente gapic que
 usa `langchain-google-genai` 2.x reintenta por su cuenta los 503 (hasta 600 s)
@@ -64,15 +73,46 @@ def _build_gemini(settings: Settings) -> BaseChatModel:
         google_api_key=settings.gemini_api_key,
         temperature=settings.llm_temperature,
         max_output_tokens=settings.llm_max_output_tokens,
-        timeout=settings.llm_timeout_seconds,
+        timeout=settings.chat_timeout_seconds("gemini"),
         max_retries=settings.llm_max_retries,
     )
     disable_internal_retry(model)
     return model
 
 
+def _build_openai_compat(settings: Settings) -> BaseChatModel:
+    api_key = settings.openai_compat_api_key.get_secret_value().strip()
+    if not api_key:
+        raise LLMConfigurationError(
+            "OPENAI_COMPAT_API_KEY no está configurada. Añádela a .env o al entorno."
+        )
+    model_name = settings.openai_compat_chat_model.strip()
+    if not model_name:
+        raise LLMConfigurationError("OPENAI_COMPAT_CHAT_MODEL no puede estar vacío.")
+
+    try:
+        from langchain_openai.chat_models.base import BaseChatOpenAI
+    except ImportError as exc:
+        raise LLMConfigurationError(
+            "El proveedor openai_compat necesita langchain-openai: "
+            "instala requirements.txt o reconstruye la imagen."
+        ) from exc
+
+    return BaseChatOpenAI(
+        model=model_name,
+        api_key=api_key,
+        base_url=settings.openai_compat_base_url,
+        temperature=settings.llm_temperature,
+        max_tokens=settings.openai_compat_max_output_tokens,
+        timeout=settings.chat_timeout_seconds("openai_compat"),
+        max_retries=settings.llm_max_retries,
+        extra_body=settings.openai_compat_extra_body_dict or None,
+    )
+
+
 _PROVIDERS: dict[str, Callable[[Settings], BaseChatModel]] = {
     "gemini": _build_gemini,
+    "openai_compat": _build_openai_compat,
 }
 
 
@@ -81,28 +121,40 @@ def supported_providers() -> tuple[str, ...]:
     return tuple(sorted(_PROVIDERS))
 
 
-def build_chat_model(settings: Settings | None = None) -> BaseChatModel:
-    """Construye el modelo de chat configurado.
+def build_chat_model(
+    settings: Settings | None = None, provider: str | None = None
+) -> BaseChatModel:
+    """Construye el modelo de chat de `provider` (por defecto, `LLM_PROVIDER`).
 
     Raises:
         LLMConfigurationError: Proveedor desconocido o credenciales ausentes.
     """
     settings = settings or get_settings()
-    builder = _PROVIDERS.get(settings.llm_provider)
+    name = (provider or settings.llm_provider).strip().lower()
+    builder = _PROVIDERS.get(name)
     if builder is None:
         raise LLMConfigurationError(
-            f"LLM_PROVIDER={settings.llm_provider!r} no está soportado. "
+            f"LLM_PROVIDER={name!r} no está soportado. "
             f"Opciones: {', '.join(supported_providers())}."
         )
     return builder(settings)
 
 
-def chat_model_name(settings: Settings | None = None) -> str:
-    """Identificador legible del modelo (para persistencia y evaluaciones)."""
+def chat_model_name(
+    settings: Settings | None = None, provider: str | None = None
+) -> str:
+    """Identificador legible del modelo (para persistencia y evaluaciones).
+
+    Gemini conserva el nombre del modelo a secas (compatibilidad con los
+    registros anteriores); el proveedor compatible usa `etiqueta:modelo`.
+    """
     settings = settings or get_settings()
-    if settings.llm_provider == "gemini":
+    name = (provider or settings.llm_provider).strip().lower()
+    if name == "gemini":
         return settings.gemini_chat_model
-    return settings.llm_provider
+    if name == "openai_compat":
+        return f"{settings.openai_compat_label}:{settings.openai_compat_chat_model}"
+    return name
 
 
 @lru_cache
