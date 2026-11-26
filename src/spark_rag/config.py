@@ -47,6 +47,24 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-001"
     embedding_dim: int = Field(default=768, ge=128, le=3072)
 
+    # Modelo de chat (Etapa 2). El proveedor se resuelve en `rag/llm.py`.
+    llm_provider: str = "gemini"
+    gemini_chat_model: str = "gemini-2.5-flash"
+    llm_temperature: float = Field(default=0.4, ge=0.0, le=2.0)
+    llm_max_output_tokens: int = Field(default=1024, ge=64, le=65536)
+    llm_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+    llm_max_retries: int = Field(default=2, ge=0, le=10)
+
+    # Recuperación (Etapa 2)
+    retrieval_top_k: int = Field(default=5, ge=1, le=50)
+    retrieval_min_similarity: float = Field(default=0.55, ge=0.0, le=1.0)
+    retrieval_categories: str = ""
+
+    # Sesiones y conversación (Etapa 2)
+    chat_history_max_messages: int = Field(default=10, ge=0, le=200)
+    chat_history_max_chars: int = Field(default=6000, ge=0)
+    chat_message_max_chars: int = Field(default=2000, ge=1, le=20000)
+
     # Ingesta
     data_dir: Path = Path("data")
     collection_name: str = "spark_documents"
@@ -63,6 +81,24 @@ class Settings(BaseSettings):
         if chunk_size is not None and value >= chunk_size:
             raise ValueError("CHUNK_OVERLAP debe ser menor que CHUNK_SIZE.")
         return value
+
+    @field_validator("llm_provider")
+    @classmethod
+    def _normalizar_proveedor(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @property
+    def retrieval_category_list(self) -> list[str]:
+        """Categorías permitidas en la recuperación (vacío = todas).
+
+        `RETRIEVAL_CATEGORIES` se escribe como CSV, p. ej. `history,dialogs`.
+        """
+        seen: list[str] = []
+        for item in self.retrieval_categories.split(","):
+            name = item.strip().lower()
+            if name and name not in seen:
+                seen.append(name)
+        return seen
 
     @property
     def database_url(self) -> str:
