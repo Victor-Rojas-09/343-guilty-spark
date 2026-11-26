@@ -86,6 +86,9 @@ siempre `null`.
 │       │   ├── sources.py
 │       │   ├── prompts.py
 │       │   ├── llm.py
+│       │   ├── llm_errors.py
+│       │   ├── structured.py
+│       │   ├── fallback.py
 │       │   ├── chain.py
 │       │   ├── mood.py
 │       │   ├── history.py
@@ -117,7 +120,10 @@ siempre `null`.
 | `rag/retriever.py` | Búsqueda en pgvector: top-k, umbral de similitud y filtros por categoría/fuente. |
 | `rag/sources.py` | Clase de autoridad de cada fragmento, `sources`/`source_details` y contexto delimitado. |
 | `rag/prompts.py` | System Prompt versionado (`PROMPT_VERSION`) y construcción de mensajes. |
-| `rag/llm.py` | Fábrica del modelo de chat según `LLM_PROVIDER` (hoy Gemini). |
+| `rag/llm.py` | Fábrica del modelo de chat según `LLM_PROVIDER` (`gemini` u `openai_compat`). |
+| `rag/llm_errors.py` | Clasificación de errores del modelo: cuáles activan el respaldo. |
+| `rag/structured.py` | Esquema `{reply, mood}`, modos de salida estructurada y limpieza del razonamiento. |
+| `rag/fallback.py` | Cadena principal + respaldos (`LLM_FALLBACK_PROVIDERS`) con registro de intentos. |
 | `rag/chain.py` | Cadena LangChain: recuperación → prompt → salida estructurada `{reply, mood}`. |
 | `rag/mood.py` | Conjunto controlado de `mood` y normalización. |
 | `rag/history.py` | Turnos de conversación y recorte del historial enviado al modelo. |

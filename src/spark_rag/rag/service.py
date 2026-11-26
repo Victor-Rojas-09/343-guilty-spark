@@ -171,15 +171,17 @@ def build_chat_service(settings: Settings | None = None) -> ChatService:
         LLMConfigurationError: Si el proveedor de chat no está configurado.
     """
     from spark_rag.db.sessions import PostgresSessionStore
-    from spark_rag.rag.chain import build_chain
-    from spark_rag.rag.llm import chat_model_name, get_chat_model
+    from spark_rag.rag.chain import SparkRagChain
+    from spark_rag.rag.fallback import build_fallback_generator
+    from spark_rag.rag.llm import chat_model_name
     from spark_rag.rag.retriever import build_retriever
 
     settings = settings or get_settings()
-    llm = get_chat_model()
+    # Principal y respaldos (`LLM_FALLBACK_PROVIDERS`), antes que el recuperador.
+    generator = build_fallback_generator(settings)
     retriever = build_retriever(settings)
     return ChatService(
-        chain=build_chain(retrieve=retriever.retrieve, llm=llm),
+        chain=SparkRagChain(retrieve=retriever.retrieve, generator=generator),
         store=PostgresSessionStore(),
         settings=settings,
         model_name=chat_model_name(settings),

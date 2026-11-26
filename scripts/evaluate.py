@@ -37,7 +37,7 @@ from spark_rag.rag.evaluation import (
     pause_seconds_arg,
     summarize,
 )
-from spark_rag.rag.llm import chat_model_name, generation_settings, get_chat_model
+from spark_rag.rag.llm import chat_model_name, generation_settings
 from spark_rag.rag.prompts import PROMPT_VERSION
 from spark_rag.rag.retriever import build_retriever
 
@@ -121,7 +121,7 @@ def main() -> int:
 
     eval_set = load_eval_set(args.questions)
     retriever = build_retriever(settings)
-    chain = build_chain(retrieve=retriever.retrieve, llm=get_chat_model())
+    chain = build_chain(retrieve=retriever.retrieve, settings=settings)
 
     started_at = datetime.now(UTC)
     results = evaluate(

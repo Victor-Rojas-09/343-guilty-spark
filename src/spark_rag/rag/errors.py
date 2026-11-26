@@ -7,6 +7,7 @@ incluir credenciales, cadenas de conexión ni trazas.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 _MAX_REASON_CHARS = 200
 _SECRET_PATTERNS = (
@@ -47,7 +48,20 @@ class LLMConfigurationError(SparkError):
 
 
 class LLMUnavailable(SparkError):
-    """El modelo de chat falló, agotó la cuota o no respondió a tiempo."""
+    """El modelo de chat falló, agotó la cuota o no respondió a tiempo.
+
+    `attempts` guarda los intentos de la cadena de respaldo (modelo, resultado
+    y duración), sin mensajes de error ni credenciales.
+    """
+
+    def __init__(
+        self,
+        message: str = "El modelo de chat no respondió.",
+        *,
+        attempts: Sequence[object] = (),
+    ) -> None:
+        super().__init__(message)
+        self.attempts: tuple[object, ...] = tuple(attempts)
 
 
 class EmptyModelResponse(SparkError):

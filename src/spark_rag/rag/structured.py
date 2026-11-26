@@ -1,7 +1,7 @@
 """Salida estructurada `{reply, mood}` del modelo de chat.
 
 - Gemini: `with_structured_output(SparkOutput, include_raw=True)` (ver
-  `chain.build_generator`).
+  `build_native_generator`).
 - Proveedor compatible con OpenAI (`OPENAI_COMPAT_STRUCTURED_MODE`):
   - `function_calling`: `bind_tools([SparkOutput], tool_choice="SparkOutput")`.
     No se usa `with_structured_output` porque añade `parallel_tool_calls`, que
@@ -150,6 +150,13 @@ def add_format_instruction(messages: list[BaseMessage]) -> list[BaseMessage]:
         *messages[:-1],
         HumanMessage(content=f"{last.content}\n\n{FORMAT_INSTRUCTION}"),
     ]
+
+
+def build_native_generator(
+    llm: BaseChatModel | Runnable[Any, Any],
+) -> Runnable[list[BaseMessage], Any]:
+    """Generador `{reply, mood}` con la salida estructurada nativa (Gemini)."""
+    return llm.with_structured_output(SparkOutput, include_raw=True)
 
 
 def build_structured_generator(
