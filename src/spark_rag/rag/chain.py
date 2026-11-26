@@ -21,7 +21,11 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
 from pydantic import BaseModel, Field
 
-from spark_rag.rag.errors import LLMUnavailable, RetrievalUnavailable
+from spark_rag.rag.errors import (
+    LLMUnavailable,
+    RetrievalUnavailable,
+    describe_error,
+)
 from spark_rag.rag.history import ChatTurn
 from spark_rag.rag.mood import DEFAULT_MOOD, Mood, normalize_mood
 from spark_rag.rag.prompts import build_messages
@@ -157,7 +161,7 @@ class SparkRagChain:
         try:
             output = self._generator.invoke(inputs["messages"])
         except Exception as exc:  # se traduce a error de dominio
-            logger.error("Fallo del modelo de chat: %s", type(exc).__name__)
+            logger.error("Fallo del modelo de chat: %s", describe_error(exc))
             raise LLMUnavailable("El modelo de chat no respondió.") from exc
 
         reply, mood, structured = parse_generation(output)

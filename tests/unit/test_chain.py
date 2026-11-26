@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import pytest
@@ -150,6 +151,25 @@ def test_fallo_del_modelo_es_llm_unavailable() -> None:
     with pytest.raises(LLMUnavailable) as info:
         chain.invoke("x")
     assert "abc" not in str(info.value)
+
+
+def test_fallo_del_modelo_registra_el_motivo_sin_claves(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    error = RuntimeError(
+        "503 This model is currently experiencing high demand. "
+        "key=AIzaSyFAKEFAKEFAKEFAKEFAKEFAKE"
+    )
+    chain, _, _ = _chain([CHUNK], error)
+    with (
+        caplog.at_level(logging.ERROR, logger="spark_rag.rag.chain"),
+        pytest.raises(LLMUnavailable) as info,
+    ):
+        chain.invoke("x")
+
+    assert "503 This model is currently experiencing high demand" in caplog.text
+    assert "AIzaSyFAKE" not in caplog.text
+    assert "AIzaSyFAKE" not in str(info.value)
 
 
 def test_respuesta_vacia_es_llm_unavailable() -> None:
