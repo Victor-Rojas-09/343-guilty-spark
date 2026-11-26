@@ -169,11 +169,7 @@ def source_details(chunks: list[RetrievedChunk]) -> list[dict[str, Any]]:
 
 def _escape(text: str) -> str:
     """Neutraliza etiquetas `<documento>` y comillas dentro de la evidencia."""
-    return (
-        text.replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    return text.replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 def format_context(chunks: list[RetrievedChunk]) -> str:

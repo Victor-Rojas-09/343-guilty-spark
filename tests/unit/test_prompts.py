@@ -52,7 +52,7 @@ def test_mensajes_separan_sistema_historial_y_evidencia() -> None:
     ]
     messages = build_messages(
         question="¿Y Chakas?",
-        context="<documento id=\"1\">texto</documento>",
+        context='<documento id="1">texto</documento>',
         has_evidence=True,
         history=history,
     )

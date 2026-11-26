@@ -77,7 +77,9 @@ EVIDENCE_MISSING = (
 def build_user_turn(question: str, context: str, *, has_evidence: bool) -> str:
     """Construye el último turno: evidencia delimitada + pregunta del usuario."""
     evidence = context.strip() if has_evidence and context.strip() else "(vacía)"
-    status = EVIDENCE_AVAILABLE if has_evidence and context.strip() else EVIDENCE_MISSING
+    status = (
+        EVIDENCE_AVAILABLE if has_evidence and context.strip() else EVIDENCE_MISSING
+    )
     return (
         "<memoria_documental>\n"
         f"{evidence}\n"
@@ -104,6 +106,8 @@ def build_messages(
         else:
             messages.append(AIMessage(content=turn.content))
     messages.append(
-        HumanMessage(content=build_user_turn(question, context, has_evidence=has_evidence))
+        HumanMessage(
+            content=build_user_turn(question, context, has_evidence=has_evidence)
+        )
     )
     return messages
