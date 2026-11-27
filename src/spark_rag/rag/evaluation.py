@@ -4,6 +4,12 @@ Las comprobaciones automáticas son heurísticas baratas (categorías
 recuperadas, marcadores de laguna, menciones esperadas, longitud máxima). No
 sustituyen la revisión humana del comportamiento esperado: cada resultado
 lleva `manual_review = "pendiente"` para completarlo a mano.
+
+Cada resultado indica qué modelo respondió (principal o respaldo), los intentos
+de la cadena de respaldo y si la salida fue estructurada. El criterio de cierre
+«Gemini genera respuestas con la personalidad acordada» solo puede avanzar con
+respuestas de Gemini: las de otro proveedor validan el pipeline, no ese
+criterio (ver `compliance`).
 """
 
 from __future__ import annotations
@@ -12,7 +18,7 @@ import argparse
 import json
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -121,6 +127,22 @@ def run_checks(
     return checks
 
 
+NO_MODEL = "sin_modelo"
+"""Clave del resumen por modelo para preguntas sin respuesta (ERROR)."""
+
+GEMINI_PERSONALITY_CRITERION = "Gemini genera respuestas con la personalidad acordada"
+
+
+def _attempt_dicts(attempts: Iterable[object]) -> list[dict[str, Any]]:
+    """Intentos serializables (`Attempt.as_dict`), sin mensajes de error."""
+    items: list[dict[str, Any]] = []
+    for attempt in attempts:
+        as_dict = getattr(attempt, "as_dict", None)
+        if callable(as_dict):
+            items.append(as_dict())
+    return items
+
+
 def evaluate(
     eval_set: EvalSet,
     answer: Callable[[str, list[ChatTurn]], RagResult],
@@ -151,9 +173,14 @@ def evaluate(
         try:
             result = answer(question.question, history)
         except Exception as exc:  # noqa: BLE001 - se registra y se continúa
+            # `LLMUnavailable` trae los intentos de la cadena (modelo y tipo de fallo).
+            attempts = _attempt_dicts(getattr(exc, "attempts", ()))
             record.update(
                 verdict="ERROR",
                 error=type(exc).__name__,
+                model=None,
+                fallback_used=len(attempts) > 1,
+                attempts=attempts,
                 elapsed_seconds=round(time.monotonic() - started, 2),
             )
             results.append(record)
@@ -166,6 +193,10 @@ def evaluate(
             ChatTurn(role="assistant", content=result.reply),
         ]
         record.update(
+            model=result.model or None,
+            fallback_used=result.fallback_used,
+            structured_mode=result.structured_mode or None,
+            attempts=_attempt_dicts(result.attempts),
             reply=result.reply,
             mood=result.mood.value,
             structured_output=result.structured,
@@ -185,3 +216,51 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, int]:
     for record in results:
         summary[record["verdict"]] = summary.get(record["verdict"], 0) + 1
     return summary
+
+
+def summarize_by_model(results: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """PASS/FAIL/ERROR por modelo que respondió (`sin_modelo` para los ERROR)."""
+    by_model: dict[str, dict[str, int]] = {}
+    for record in results:
+        model = record.get("model") or NO_MODEL
+        counts = by_model.setdefault(model, {"PASS": 0, "FAIL": 0, "ERROR": 0})
+        counts[record["verdict"]] = counts.get(record["verdict"], 0) + 1
+    return by_model
+
+
+def compliance(
+    results: list[dict[str, Any]], *, gemini_model: str
+) -> list[dict[str, Any]]:
+    """Estado de los criterios de cierre que dependen del modelo que respondió.
+
+    «Gemini genera respuestas con la personalidad acordada»:
+    - `PENDIENTE` si ninguna respuesta de esta pasada es de Gemini (p. ej. todas
+      de NVIDIA): esas respuestas validan el pipeline, no este criterio.
+    - `REVISION_MANUAL` si hay respuestas de Gemini: la personalidad se confirma
+      a mano (`manual_review`); el informe nunca lo da por cumplido solo.
+    """
+    answered = [r for r in results if r.get("model")]
+    gemini = [r for r in answered if r["model"] == gemini_model]
+    others = len(answered) - len(gemini)
+    if gemini:
+        passed = sum(1 for r in gemini if r["verdict"] == "PASS")
+        status = "REVISION_MANUAL"
+        detail = (
+            f"{len(gemini)} respuesta(s) de {gemini_model} ({passed} PASS "
+            "automático); falta confirmar la personalidad en manual_review."
+        )
+    else:
+        status = "PENDIENTE"
+        detail = (
+            f"Ninguna respuesta de {gemini_model} en esta pasada; {others} "
+            "respuesta(s) de otros modelos validan el pipeline, no este criterio."
+        )
+    return [
+        {
+            "criterion": GEMINI_PERSONALITY_CRITERION,
+            "status": status,
+            "gemini_answers": len(gemini),
+            "other_model_answers": others,
+            "detail": detail,
+        }
+    ]

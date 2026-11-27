@@ -5,16 +5,20 @@ from pathlib import Path
 import pytest
 
 from spark_rag.rag.chain import RagResult
+from spark_rag.rag.errors import LLMUnavailable
 from spark_rag.rag.evaluation import (
     MIN_PAUSE_SECONDS,
     EvalQuestion,
     EvalSet,
+    compliance,
     evaluate,
     load_eval_set,
     pause_seconds_arg,
     run_checks,
     summarize,
+    summarize_by_model,
 )
+from spark_rag.rag.fallback import Attempt
 from spark_rag.rag.mood import Mood
 from spark_rag.rag.sources import RetrievedChunk
 
@@ -165,3 +169,127 @@ def test_evaluate_espera_entre_preguntas(monkeypatch: pytest.MonkeyPatch) -> Non
 
     # Sin espera antes de la primera; 15 s antes de cada una de las siguientes.
     assert sleeps == [MIN_PAUSE_SECONDS, MIN_PAUSE_SECONDS]
+
+
+GEMINI = "gemini-3.8-flash"
+NVIDIA = "nvidia:mistralai/mistral-large-4-1t-a52b"
+
+
+def _three_questions() -> EvalSet:
+    return EvalSet(
+        version="t",
+        gap_markers=[],
+        questions=[
+            EvalQuestion(id=q, coverage="c", question=q, expected_behavior="")
+            for q in ("a", "b", "c")
+        ],
+    )
+
+
+def _answer_with_models(question: str, history: list) -> RagResult:
+    if question == "a":
+        return RagResult(
+            reply="Saludos.",
+            mood=Mood.IDLE,
+            model=GEMINI,
+            structured_mode="native",
+            attempts=(Attempt(GEMINI, "ok", 2.5),),
+        )
+    if question == "b":
+        return RagResult(
+            reply="Respuesta del respaldo.",
+            mood=Mood.THINKING,
+            structured=False,
+            model=NVIDIA,
+            structured_mode="function_calling",
+            attempts=(Attempt(GEMINI, "unavailable", 30.0), Attempt(NVIDIA, "ok", 4.0)),
+        )
+    raise LLMUnavailable(
+        attempts=(Attempt(GEMINI, "rate_limit", 0.4), Attempt(NVIDIA, "timeout", 60.0))
+    )
+
+
+def test_cada_pregunta_registra_el_modelo_y_los_intentos() -> None:
+    a, b, c = evaluate(_three_questions(), _answer_with_models)
+
+    assert (a["model"], a["fallback_used"], a["structured_mode"]) == (
+        GEMINI,
+        False,
+        "native",
+    )
+    assert a["structured_output"] is True
+    assert a["attempts"] == [{"model": GEMINI, "outcome": "ok", "seconds": 2.5}]
+
+    assert (b["model"], b["fallback_used"], b["structured_output"]) == (
+        NVIDIA,
+        True,
+        False,
+    )
+    assert [x["outcome"] for x in b["attempts"]] == ["unavailable", "ok"]
+
+    assert c["verdict"] == "ERROR"
+    assert c["error"] == "LLMUnavailable"
+    assert c["model"] is None
+    assert c["fallback_used"] is True
+    assert c["attempts"] == [
+        {"model": GEMINI, "outcome": "rate_limit", "seconds": 0.4},
+        {"model": NVIDIA, "outcome": "timeout", "seconds": 60.0},
+    ]
+
+
+def test_error_sin_intentos_no_rompe_el_registro() -> None:
+    def answer(question, history):
+        raise RuntimeError("fallo de recuperación")
+
+    (record, *_) = evaluate(_three_questions(), answer)
+    assert record["attempts"] == []
+    assert record["fallback_used"] is False
+
+
+def test_el_registro_es_serializable_a_json() -> None:
+    results = evaluate(_three_questions(), _answer_with_models)
+    assert json.loads(json.dumps(results, ensure_ascii=False))
+
+
+def test_resumen_por_modelo() -> None:
+    results = evaluate(_three_questions(), _answer_with_models)
+
+    assert summarize_by_model(results) == {
+        GEMINI: {"PASS": 1, "FAIL": 0, "ERROR": 0},
+        NVIDIA: {"PASS": 1, "FAIL": 0, "ERROR": 0},
+        "sin_modelo": {"PASS": 0, "FAIL": 0, "ERROR": 1},
+    }
+
+
+def test_criterio_gemini_pendiente_si_solo_responde_nvidia() -> None:
+    results = [
+        {"model": NVIDIA, "verdict": "PASS"},
+        {"model": NVIDIA, "verdict": "PASS"},
+        {"model": None, "verdict": "ERROR"},
+    ]
+
+    (row,) = compliance(results, gemini_model=GEMINI)
+
+    assert row["criterion"] == "Gemini genera respuestas con la personalidad acordada"
+    assert row["status"] == "PENDIENTE"
+    assert (row["gemini_answers"], row["other_model_answers"]) == (0, 2)
+    assert "validan el pipeline" in row["detail"]
+
+
+def test_criterio_gemini_pendiente_si_todo_es_error() -> None:
+    (row,) = compliance([{"model": None, "verdict": "ERROR"}], gemini_model=GEMINI)
+    assert row["status"] == "PENDIENTE"
+
+
+def test_criterio_gemini_nunca_se_cumple_automaticamente() -> None:
+    results = [
+        {"model": GEMINI, "verdict": "PASS"},
+        {"model": GEMINI, "verdict": "FAIL"},
+        {"model": NVIDIA, "verdict": "PASS"},
+    ]
+
+    (row,) = compliance(results, gemini_model=GEMINI)
+
+    assert row["status"] == "REVISION_MANUAL"
+    assert (row["gemini_answers"], row["other_model_answers"]) == (2, 1)
+    assert "1 PASS" in row["detail"]

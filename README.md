@@ -505,13 +505,25 @@ python scripts/evaluate.py
 Entre pregunta y pregunta espera 15 s por defecto (`--pause`, mínimo 15) para
 no superar el límite de 5 peticiones por minuto del plan gratuito de Gemini.
 
-El script usa la cadena RAG real (Gemini), aplica comprobaciones automáticas
-(fuentes esperadas, marcadores de laguna, menciones, longitud máxima) y guarda
-un informe en `reports/eval/eval_<fecha>_<prompt>.json` con: fecha, versión de
-código, commit, versión del prompt, modelo de chat y de embeddings,
-documentos indexados, parámetros de recuperación y PASS/FAIL por pregunta.
-Cada resultado incluye `manual_review: "pendiente"`: las comprobaciones
-automáticas son orientativas y el comportamiento esperado se revisa a mano.
+El script usa la cadena RAG real con la cadena de chat configurada
+(`LLM_PROVIDER` y, si hay, `LLM_FALLBACK_PROVIDERS`), aplica comprobaciones
+automáticas (fuentes esperadas, marcadores de laguna, menciones, longitud
+máxima) y guarda un informe en `reports/eval/eval_<fecha>_<prompt>.json` con:
+fecha, versión de código, commit, versión del prompt, cadena de chat
+(`chat_chain`, `chat_generation` con temperatura, `top_p`, modo estructurado y
+timeout de cada proveedor, cooldown del principal), modelo de embeddings,
+documentos indexados, parámetros de recuperación y PASS/FAIL por pregunta y
+por modelo (`summary_by_model`).
+
+Cada pregunta registra el modelo que respondió (`model`), si se usó el
+respaldo (`fallback_used`), el modo y si la salida fue estructurada, y los
+intentos (`attempts`: modelo, resultado y segundos). Cada resultado incluye
+`manual_review: "pendiente"`: las comprobaciones automáticas son orientativas y
+el comportamiento esperado se revisa a mano. En `compliance`, el criterio
+«Gemini genera respuestas con la personalidad acordada» queda `PENDIENTE`
+mientras ninguna respuesta sea de Gemini (las de otro proveedor validan el
+pipeline, no ese criterio) y pasa a `REVISION_MANUAL` cuando las hay; nunca se
+da por cumplido automáticamente.
 
 Repite la evaluación después de cambiar documentos, prompt, modelo o
 parámetros de recuperación (pruebas de regresión del manual §4.2).

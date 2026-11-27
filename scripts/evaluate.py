@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Evalúa al personaje con Gemini real y registra los resultados (§4.3-§4.4).
+"""Evalúa al personaje con el modelo real y registra los resultados (§4.3-§4.4).
 
-Requiere el corpus ya ingerido y `GEMINI_API_KEY`. No usa sesiones de la base
+Usa la cadena de chat configurada (`LLM_PROVIDER` y `LLM_FALLBACK_PROVIDERS`) y
+registra qué modelo respondió cada pregunta. Requiere el corpus ya ingerido y
+`GEMINI_API_KEY` (embeddings y, si es el principal, chat). No usa sesiones de la base
 de datos: cada pregunta se responde con la cadena RAG y las preguntas con
 `history_from` reciben el historial del turno indicado.
 
@@ -32,10 +34,12 @@ from spark_rag.db.connection import check_database, get_connection
 from spark_rag.rag.chain import build_chain
 from spark_rag.rag.evaluation import (
     MIN_PAUSE_SECONDS,
+    compliance,
     evaluate,
     load_eval_set,
     pause_seconds_arg,
     summarize,
+    summarize_by_model,
 )
 from spark_rag.rag.llm import chat_model_name, generation_settings
 from spark_rag.rag.prompts import PROMPT_VERSION
@@ -136,6 +140,9 @@ def main() -> int:
         pause_seconds=args.pause,
     )
     summary = summarize(results)
+    summary_by_model = summarize_by_model(results)
+    chain_providers = [settings.llm_provider, *settings.llm_fallback_provider_list]
+    has_fallback = len(chain_providers) > 1
 
     report = {
         "run": {
@@ -150,12 +157,15 @@ def main() -> int:
             # Modelo, temperature, top_p y structured_mode de cada proveedor de la
             # cadena (principal y respaldos), sin credenciales.
             "chat_generation": [
-                generation_settings(settings, provider)
-                for provider in [
-                    settings.llm_provider,
-                    *settings.llm_fallback_provider_list,
-                ]
+                generation_settings(settings, provider) for provider in chain_providers
             ],
+            # Orden de la cadena de chat y política de respaldo de esta pasada.
+            "chat_chain": [
+                chat_model_name(settings, provider) for provider in chain_providers
+            ],
+            "primary_cooldown_seconds": (
+                settings.llm_primary_cooldown_seconds if has_fallback else 0
+            ),
             "pause_seconds": args.pause,
             "embedding_model": settings.gemini_embedding_model,
             "embedding_dim": settings.embedding_dim,
@@ -167,6 +177,10 @@ def main() -> int:
             },
             "indexed_documents": indexed_documents(),
             "summary": summary,
+            "summary_by_model": summary_by_model,
+            "compliance": compliance(
+                results, gemini_model=chat_model_name(settings, "gemini")
+            ),
         },
         "results": results,
     }
@@ -183,11 +197,20 @@ def main() -> int:
         failed = [name for name, ok in record.get("checks", {}).items() if not ok]
         extra = f" fallos={failed}" if failed else ""
         error = f" error={record['error']}" if "error" in record else ""
-        print(f"[{record['verdict']}] {record['id']}{extra}{error}")
+        model = f" modelo={record.get('model') or '-'}"
+        fallback = " [respaldo]" if record.get("fallback_used") else ""
+        print(f"[{record['verdict']}] {record['id']}{model}{fallback}{extra}{error}")
     print(
         f"PASS={summary['PASS']} FAIL={summary['FAIL']} ERROR={summary['ERROR']} "
-        f"prompt={PROMPT_VERSION} modelo={chat_model_name(settings)}"
+        f"prompt={PROMPT_VERSION} cadena={' -> '.join(report['run']['chat_chain'])}"
     )
+    for model, counts in summary_by_model.items():
+        print(
+            f"  {model}: PASS={counts['PASS']} FAIL={counts['FAIL']} "
+            f"ERROR={counts['ERROR']}"
+        )
+    for row in report["run"]["compliance"]:
+        print(f"{row['criterion']}: {row['status']} ({row['detail']})")
     print(f"Informe: {output}")
     return 0 if summary["ERROR"] == 0 else 1
 
