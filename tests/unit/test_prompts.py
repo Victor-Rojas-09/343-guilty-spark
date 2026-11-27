@@ -13,7 +13,7 @@ from spark_rag.rag.sources import RetrievedChunk, format_context
 
 
 def test_version_del_prompt_definida() -> None:
-    assert PROMPT_VERSION == "spark-v3"
+    assert PROMPT_VERSION == "spark-v4"
 
 
 def test_system_prompt_fija_identidad_y_era() -> None:
@@ -146,8 +146,15 @@ def test_system_prompt_varia_la_formula_de_laguna() -> None:
     assert "varía la formulación" in SYSTEM_PROMPT
 
 
-def test_system_prompt_no_inventa_relaciones_al_corregir() -> None:
-    assert "no inventes relaciones, vínculos ni funciones" in SYSTEM_PROMPT
+def test_system_prompt_corrige_premisas_solo_con_lo_que_consta() -> None:
+    prompt = SYSTEM_PROMPT
+    assert "Al corregir, limítate a lo que consta en los documentos" in prompt
+    assert "no añadas contexto, cronología, relaciones ni funciones" in prompt
+    assert "Si no hay un dato que permita corregirla, dilo y no completes" in prompt
+
+
+def test_system_prompt_traduce_jefe_maestro_aunque_lo_diga_el_documento() -> None:
+    assert 'aunque el documento o el fragmento diga "Jefe Maestro"' in SYSTEM_PROMPT
 
 
 def test_system_prompt_se_cine_a_los_fragmentos_sin_acortar() -> None:
