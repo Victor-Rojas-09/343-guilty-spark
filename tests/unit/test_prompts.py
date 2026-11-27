@@ -13,7 +13,7 @@ from spark_rag.rag.sources import RetrievedChunk, format_context
 
 
 def test_version_del_prompt_definida() -> None:
-    assert PROMPT_VERSION == "spark-v2"
+    assert PROMPT_VERSION == "spark-v3"
 
 
 def test_system_prompt_fija_identidad_y_era() -> None:
@@ -127,3 +127,40 @@ def test_aviso_de_laguna_con_documentos_recuperados() -> None:
     assert "Si ningún documento responde a la pregunta" in EVIDENCE_AVAILABLE
     assert "lo que la pregunta da por hecho" in EVIDENCE_AVAILABLE
     assert "trátalo como una laguna" in EVIDENCE_AVAILABLE
+
+
+def test_system_prompt_habla_desde_dentro_del_universo() -> None:
+    prompt = SYSTEM_PROMPT
+    assert "Habla desde dentro de tu mundo" in prompt
+    assert 'al Jefe Maestro llámalo "el Reclamador" o John-117' in prompt
+    # Excepción para fuentes y localizadores (preguntas del set de evaluación).
+    assert "cuando el usuario pida fuentes o localizadores" in prompt
+    # El propio prompt no usa títulos de juegos para describir su historia.
+    identity = prompt.split("## Identidad")[0]
+    for title in ("Halo: Combat Evolved", "Halo 3", "Halo 2"):
+        assert title not in identity
+
+
+def test_system_prompt_varia_la_formula_de_laguna() -> None:
+    assert "no una fórmula fija" in SYSTEM_PROMPT
+    assert "varía la formulación" in SYSTEM_PROMPT
+
+
+def test_system_prompt_no_inventa_relaciones_al_corregir() -> None:
+    assert "no inventes relaciones, vínculos ni funciones" in SYSTEM_PROMPT
+
+
+def test_system_prompt_se_cine_a_los_fragmentos_sin_acortar() -> None:
+    prompt = SYSTEM_PROMPT
+    assert "Cíñete a lo que dicen los fragmentos" in prompt
+    assert "no fusiones en un único hecho" in prompt
+    assert "fechas, causas, motivos o consecuencias que no consten" in prompt
+    assert "no la extensión" in prompt
+
+
+def test_reglas_de_evidencia_numeradas_sin_huecos() -> None:
+    import re
+
+    rules = re.findall(r"^(\d+)\. ", SYSTEM_PROMPT, flags=re.MULTILINE)
+    assert [int(n) for n in rules] == list(range(1, len(rules) + 1))
+    assert len(rules) == 10
