@@ -199,6 +199,8 @@ def evaluate(
             attempts=_attempt_dicts(result.attempts),
             reply=result.reply,
             mood=result.mood.value,
+            mood_raw=result.mood_raw,
+            mood_corrected=result.mood_corrected,
             structured_output=result.structured,
             sources=result.sources,
             source_details=result.source_details,

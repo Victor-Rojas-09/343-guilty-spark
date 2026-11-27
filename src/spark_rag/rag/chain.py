@@ -79,6 +79,9 @@ class RagResult:
     model: str = ""
     structured_mode: str = ""
     attempts: tuple[Attempt, ...] = ()
+    # Mood tal como lo propuso el modelo y si hubo que corregirlo.
+    mood_raw: str | None = None
+    mood_corrected: bool = False
 
     @property
     def fallback_used(self) -> bool:
@@ -168,6 +171,8 @@ class SparkRagChain:
             model=generation.model,
             structured_mode=generation.structured_mode,
             attempts=generation.attempts,
+            mood_raw=generation.mood_raw,
+            mood_corrected=generation.mood_corrected,
         )
 
     def invoke(

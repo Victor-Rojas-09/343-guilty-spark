@@ -41,7 +41,7 @@ from spark_rag.rag.mood import Mood
 from spark_rag.rag.structured import (
     build_native_generator,
     build_structured_generator,
-    parse_generation,
+    parse_generation_details,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,18 +52,46 @@ OUTCOME_SKIPPED_COOLDOWN = "skipped_cooldown"
 
 @dataclass(frozen=True)
 class Attempt:
-    """Un intento de generación: modelo, resultado (`ok` o tipo de error) y duración."""
+    """Un intento de generación: modelo, resultado (`ok` o tipo de error) y duración.
+
+    Los tokens salen del uso que devuelve el modelo (`usage_metadata`); son None
+    cuando no se conocen (p. ej. si la llamada falló).
+    """
 
     model: str
     outcome: str
     seconds: float
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_tokens: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "model": self.model,
             "outcome": self.outcome,
             "seconds": round(self.seconds, 3),
         }
+        for name in ("input_tokens", "output_tokens", "reasoning_tokens"):
+            value = getattr(self, name)
+            if value is not None:
+                data[name] = value
+        return data
+
+
+def token_usage(output: Any) -> dict[str, int | None]:
+    """Tokens de entrada, salida y razonamiento del mensaje del modelo."""
+    message = output.get("raw") if isinstance(output, dict) else output
+    usage = getattr(message, "usage_metadata", None) or {}
+    details = usage.get("output_token_details") or {}
+
+    def _int(value: Any) -> int | None:
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    return {
+        "input_tokens": _int(usage.get("input_tokens")),
+        "output_tokens": _int(usage.get("output_tokens")),
+        "reasoning_tokens": _int(details.get("reasoning")),
+    }
 
 
 @dataclass(frozen=True)
@@ -85,6 +113,8 @@ class Generation:
     model: str
     structured_mode: str
     attempts: tuple[Attempt, ...]
+    mood_raw: str | None = None
+    mood_corrected: bool = False
 
 
 class FallbackGenerator:
@@ -154,8 +184,8 @@ class FallbackGenerator:
             started = self._clock()
             try:
                 output = candidate.generator.invoke(messages)
-                reply, mood, structured = parse_generation(output)
-                if not reply:
+                parsed = parse_generation_details(output)
+                if not parsed.reply:
                     raise EmptyModelResponse("El modelo devolvió una respuesta vacía.")
             except Exception as exc:  # se clasifica y se traduce a error de dominio
                 kind = classify_error(exc)
@@ -186,8 +216,20 @@ class FallbackGenerator:
                 ) from exc
 
             attempts.append(
-                Attempt(candidate.model, OUTCOME_OK, self._elapsed(started))
+                Attempt(
+                    candidate.model,
+                    OUTCOME_OK,
+                    self._elapsed(started),
+                    **token_usage(output),
+                )
             )
+            if parsed.mood_corrected:
+                logger.warning(
+                    "Mood no válido de %s (%r); se usa %s.",
+                    candidate.model,
+                    parsed.mood_raw,
+                    parsed.mood.value,
+                )
             if index > 0:
                 logger.info(
                     "Respondió el respaldo %s tras %d intento(s) sin respuesta.",
@@ -195,12 +237,14 @@ class FallbackGenerator:
                     len(attempts) - 1,
                 )
             return Generation(
-                reply=reply,
-                mood=mood,
-                structured=structured,
+                reply=parsed.reply,
+                mood=parsed.mood,
+                structured=parsed.structured,
                 model=candidate.model,
                 structured_mode=candidate.structured_mode,
                 attempts=tuple(attempts),
+                mood_raw=parsed.mood_raw,
+                mood_corrected=parsed.mood_corrected,
             )
         raise AssertionError("inalcanzable")  # pragma: no cover
 

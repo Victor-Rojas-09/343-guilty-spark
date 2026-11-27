@@ -293,3 +293,25 @@ def test_criterio_gemini_nunca_se_cumple_automaticamente() -> None:
     assert row["status"] == "REVISION_MANUAL"
     assert (row["gemini_answers"], row["other_model_answers"]) == (2, 1)
     assert "1 PASS" in row["detail"]
+
+
+def test_el_informe_registra_el_mood_en_bruto() -> None:
+    def answer(question, history):
+        return RagResult(
+            reply="Hola.",
+            mood=Mood.THINKING,
+            structured=False,
+            model=NVIDIA,
+            mood_raw="Pensativo",
+            mood_corrected=True,
+            attempts=(Attempt(NVIDIA, "ok", 3.0, 900, 120, 80),),
+        )
+
+    (record, *_) = evaluate(_three_questions(), answer)
+
+    assert (record["mood"], record["mood_raw"], record["mood_corrected"]) == (
+        "thinking",
+        "Pensativo",
+        True,
+    )
+    assert record["attempts"][0]["reasoning_tokens"] == 80

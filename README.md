@@ -520,8 +520,10 @@ documentos indexados, parámetros de recuperación y PASS/FAIL por pregunta y
 por modelo (`summary_by_model`).
 
 Cada pregunta registra el modelo que respondió (`model`), si se usó el
-respaldo (`fallback_used`), el modo y si la salida fue estructurada, y los
-intentos (`attempts`: modelo, resultado y segundos). Cada resultado incluye
+respaldo (`fallback_used`), el modo y si la salida fue estructurada, el mood
+tal como lo propuso el modelo (`mood_raw`) y si hubo que corregirlo
+(`mood_corrected`), y los intentos (`attempts`: modelo, resultado, segundos y,
+cuando el modelo los informa, tokens de entrada, salida y razonamiento). Cada resultado incluye
 `manual_review: "pendiente"`: las comprobaciones automáticas son orientativas y
 el comportamiento esperado se revisa a mano. En `compliance`, el criterio
 «Gemini genera respuestas con la personalidad acordada» queda `PENDIENTE`

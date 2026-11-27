@@ -21,6 +21,7 @@ from spark_rag.rag.structured import (
     build_structured_generator,
     clean_model_text,
     parse_generation,
+    parse_generation_details,
     parse_json_reply,
     parse_prompt_message,
     parse_tool_message,
@@ -112,10 +113,11 @@ def test_modo_prompt_ignora_partes_de_razonamiento() -> None:
     assert structured is True
 
 
-def test_modo_prompt_mood_invalido_se_normaliza() -> None:
+def test_modo_prompt_mood_invalido_no_es_estructurado() -> None:
+    # Igual que en la vía de herramienta: un mood inválido no cuenta como estructurado.
     message = AIMessage(content='{"reply": "Hola.", "mood": "furioso"}')
     reply, mood, structured = parse_generation(parse_prompt_message(message))
-    assert (reply, mood, structured) == ("Hola.", Mood.THINKING, True)
+    assert (reply, mood, structured) == ("Hola.", Mood.THINKING, False)
 
 
 def test_modo_prompt_sin_json_usa_el_texto_limpio() -> None:
@@ -272,3 +274,72 @@ def test_cadena_con_modo_prompt() -> None:
 def test_cadena_respuesta_vacia_es_llm_unavailable() -> None:
     with pytest.raises(LLMUnavailable):
         _chain_with("<think>sin tokens").invoke("¿Quién eres?")
+
+
+# --- Mood en bruto ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw_mood", "mood", "structured", "mood_raw", "corrected"),
+    [
+        ("enthusiastic", Mood.ENTHUSIASTIC, True, "enthusiastic", False),
+        ("Thinking", Mood.THINKING, False, "Thinking", True),
+        ("furioso", Mood.THINKING, False, "furioso", True),
+        (None, Mood.THINKING, False, None, True),
+    ],
+)
+def test_mood_en_bruto_por_la_via_de_herramienta(
+    raw_mood: str | None,
+    mood: Mood,
+    structured: bool,
+    mood_raw: str | None,
+    corrected: bool,
+) -> None:
+    args: dict[str, Any] = {"reply": "Hola."}
+    if raw_mood is not None:
+        args["mood"] = raw_mood
+    details = parse_generation_details(parse_tool_message(_tool_message(args)))
+
+    assert (details.mood, details.structured) == (mood, structured)
+    assert (details.mood_raw, details.mood_corrected) == (mood_raw, corrected)
+
+
+@pytest.mark.parametrize(
+    ("content", "structured", "mood_raw", "corrected"),
+    [
+        (JSON_REPLY, True, "enthusiastic", False),
+        ('{"reply": "Hola.", "mood": " IDLE "}', False, " IDLE ", True),
+        ('{"reply": "Hola.", "mood": "furioso"}', False, "furioso", True),
+        ('{"reply": "Hola."}', False, None, True),
+        ("Texto sin JSON.", False, None, True),
+    ],
+)
+def test_mood_en_bruto_por_la_via_de_texto(
+    content: str, structured: bool, mood_raw: str | None, corrected: bool
+) -> None:
+    details = parse_generation_details(parse_prompt_message(AIMessage(content=content)))
+
+    assert details.structured is structured
+    assert (details.mood_raw, details.mood_corrected) == (mood_raw, corrected)
+
+
+def test_mood_de_sparkoutput_no_se_corrige() -> None:
+    details = parse_generation_details(SparkOutput(reply="Hola.", mood="rampant"))
+    assert (details.mood, details.mood_raw, details.mood_corrected) == (
+        Mood.RAMPANT,
+        "rampant",
+        False,
+    )
+
+
+def test_mood_en_bruto_se_recorta() -> None:
+    details = parse_generation_details(
+        parse_tool_message(_tool_message({"reply": "Hola.", "mood": "x" * 500}))
+    )
+    assert details.mood_raw == "x" * 40
+
+
+def test_modo_prompt_conserva_el_uso_de_tokens() -> None:
+    usage = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    output = parse_prompt_message(AIMessage(content=JSON_REPLY, usage_metadata=usage))
+    assert output["raw"].usage_metadata["output_tokens"] == 5

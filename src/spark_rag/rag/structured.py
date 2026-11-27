@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -103,7 +104,11 @@ def parse_json_reply(text: str) -> dict[str, Any] | None:
 
 
 def _clean_message(message: Any) -> AIMessage:
-    return AIMessage(content=clean_model_text(_text_from_message(message)))
+    # Se conserva el uso de tokens para el registro de intentos.
+    return AIMessage(
+        content=clean_model_text(_text_from_message(message)),
+        usage_metadata=getattr(message, "usage_metadata", None),
+    )
 
 
 def parse_tool_message(message: Any) -> dict[str, Any]:
@@ -179,35 +184,79 @@ def build_structured_generator(
     )
 
 
-def parse_generation(output: Any) -> tuple[str, Mood, bool]:
-    """Normaliza la salida del modelo a `(reply, mood, structured)`.
+MAX_RAW_MOOD_CHARS = 40
+
+
+@dataclass(frozen=True)
+class ParsedOutput:
+    """Salida normalizada del modelo, con el mood tal como llegó.
+
+    `mood_raw` es el valor propuesto por el modelo (recortado; None si no
+    propuso ninguno) y `mood_corrected` indica si hubo que sustituirlo o
+    normalizarlo: solo los valores exactos del enum cuentan como válidos.
+    """
+
+    reply: str
+    mood: Mood
+    structured: bool
+    mood_raw: str | None
+    mood_corrected: bool
+
+
+def _mood_fields(value: Any) -> tuple[Mood, str | None, bool]:
+    mood = normalize_mood(value)
+    if value is None:
+        return mood, None, True
+    raw = value.value if isinstance(value, Mood) else str(value)
+    raw = raw[:MAX_RAW_MOOD_CHARS]
+    return mood, raw, raw != mood.value
+
+
+def _from_text(message: Any) -> ParsedOutput:
+    return ParsedOutput(
+        reply=_text_from_message(message).strip(),
+        mood=DEFAULT_MOOD,
+        structured=False,
+        mood_raw=None,
+        mood_corrected=True,
+    )
+
+
+def parse_generation_details(output: Any) -> ParsedOutput:
+    """Normaliza la salida del modelo y conserva el mood en bruto.
 
     Acepta un `SparkOutput`, un diccionario `include_raw` de LangChain
-    (`raw`/`parsed`/`parsing_error`) o un mensaje de chat simple.
+    (`raw`/`parsed`/`parsing_error`) o un mensaje de chat simple. Una salida
+    solo cuenta como estructurada si el `mood` es un valor exacto del enum,
+    tanto en la vía de herramienta como en la de JSON en el texto.
     """
-    if isinstance(output, SparkOutput):
-        return output.reply.strip(), normalize_mood(output.mood), True
-
+    parsed = output
     if isinstance(output, dict) and "raw" in output:
         parsed = output.get("parsed")
-        if isinstance(parsed, SparkOutput):
-            return parsed.reply.strip(), normalize_mood(parsed.mood), True
-        if isinstance(parsed, dict) and parsed.get("reply"):
-            return (
-                str(parsed["reply"]).strip(),
-                normalize_mood(parsed.get("mood")),
-                True,
-            )
 
-        raw = output.get("raw")
-        for call in getattr(raw, "tool_calls", None) or []:
-            args = call.get("args") or {}
-            if args.get("reply"):
-                return (
-                    str(args["reply"]).strip(),
-                    normalize_mood(args.get("mood")),
-                    False,
-                )
-        return _text_from_message(raw).strip(), DEFAULT_MOOD, False
+    if isinstance(parsed, SparkOutput):
+        mood, raw, corrected = _mood_fields(parsed.mood)
+        return ParsedOutput(parsed.reply.strip(), mood, True, raw, corrected)
 
-    return _text_from_message(output).strip(), DEFAULT_MOOD, False
+    if not (isinstance(output, dict) and "raw" in output):
+        return _from_text(output)
+
+    if isinstance(parsed, dict) and parsed.get("reply"):
+        mood, raw, corrected = _mood_fields(parsed.get("mood"))
+        return ParsedOutput(
+            str(parsed["reply"]).strip(), mood, not corrected, raw, corrected
+        )
+
+    message = output.get("raw")
+    for call in getattr(message, "tool_calls", None) or []:
+        args = call.get("args") or {}
+        if args.get("reply"):
+            mood, raw, corrected = _mood_fields(args.get("mood"))
+            return ParsedOutput(str(args["reply"]).strip(), mood, False, raw, corrected)
+    return _from_text(message)
+
+
+def parse_generation(output: Any) -> tuple[str, Mood, bool]:
+    """Normaliza la salida del modelo a `(reply, mood, structured)`."""
+    details = parse_generation_details(output)
+    return details.reply, details.mood, details.structured

@@ -18,10 +18,11 @@ from spark_rag.rag.fallback import (
     Candidate,
     FallbackGenerator,
     build_fallback_generator,
+    token_usage,
 )
 from spark_rag.rag.mood import Mood
 from spark_rag.rag.sources import RetrievedChunk
-from spark_rag.rag.structured import TOOL_NAME, SparkOutput
+from spark_rag.rag.structured import TOOL_NAME, SparkOutput, parse_tool_message
 
 FAKE_KEY = "nvapi-FAKEFAKEFAKEFAKE"
 MESSAGES = [HumanMessage(content="¿Quién eres?")]
@@ -609,3 +610,111 @@ def test_la_cadena_marca_el_salto_como_respaldo_usado() -> None:
     assert result.fallback_used is True
     assert result.model == "nvidia:mistralai/modelo"
     assert result.attempts[0].outcome == "skipped_cooldown"
+
+
+# --- Tokens y mood en bruto ------------------------------------------------------
+
+
+def _tool_output(mood: str, usage: dict[str, Any] | None = None) -> dict[str, Any]:
+    message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": TOOL_NAME,
+                "args": {"reply": "Saludos.", "mood": mood},
+                "id": "call_1",
+                "type": "tool_call",
+            }
+        ],
+        usage_metadata=usage,
+    )
+    return parse_tool_message(message)
+
+
+USAGE = {
+    "input_tokens": 1200,
+    "output_tokens": 340,
+    "total_tokens": 1540,
+    "output_token_details": {"reasoning": 210},
+}
+
+
+def test_el_intento_guarda_los_tokens_del_modelo() -> None:
+    generator, _ = _generator(_tool_output("idle", USAGE))
+
+    generation = generator.generate(MESSAGES)
+
+    assert generation.attempts[0].as_dict() == {
+        "model": "gemini-3.8-flash",
+        "outcome": "ok",
+        "seconds": 0.5,
+        "input_tokens": 1200,
+        "output_tokens": 340,
+        "reasoning_tokens": 210,
+    }
+
+
+def test_sin_uso_no_hay_tokens_en_el_intento() -> None:
+    generator, _ = _generator(TimeoutError("x"), _ok())
+    attempts = [a.as_dict() for a in generator.generate(MESSAGES).attempts]
+    assert all("output_tokens" not in a for a in attempts)
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        (
+            {"raw": AIMessage(content="x", usage_metadata=USAGE), "parsed": None},
+            {"input_tokens": 1200, "output_tokens": 340, "reasoning_tokens": 210},
+        ),
+        (
+            AIMessage(
+                content="x",
+                usage_metadata={
+                    "input_tokens": 3,
+                    "output_tokens": 2,
+                    "total_tokens": 5,
+                },
+            ),
+            {"input_tokens": 3, "output_tokens": 2, "reasoning_tokens": None},
+        ),
+        (
+            SparkOutput(reply="x", mood="idle"),
+            {"input_tokens": None, "output_tokens": None, "reasoning_tokens": None},
+        ),
+    ],
+)
+def test_token_usage(output: Any, expected: dict[str, Any]) -> None:
+    assert token_usage(output) == expected
+
+
+def test_mood_corregido_queda_en_el_resultado_y_en_el_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    chain = SparkRagChain(
+        retrieve=lambda _: [CHUNK],
+        generator=_generator(_tool_output("Pensativo"))[0],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="spark_rag.rag.fallback"):
+        result = chain.invoke("x")
+
+    assert (result.mood, result.structured) == (Mood.THINKING, False)
+    assert (result.mood_raw, result.mood_corrected) == ("Pensativo", True)
+    expected = "Mood no válido de gemini-3.8-flash ('Pensativo'); se usa thinking."
+    assert expected in caplog.text
+
+
+def test_mood_valido_no_genera_aviso(caplog: pytest.LogCaptureFixture) -> None:
+    chain = SparkRagChain(
+        retrieve=lambda _: [CHUNK], generator=_generator(_tool_output("thinking"))[0]
+    )
+    with caplog.at_level(logging.WARNING, logger="spark_rag.rag.fallback"):
+        result = chain.invoke("x")
+
+    assert (result.mood_raw, result.mood_corrected, result.structured) == (
+        "thinking",
+        False,
+        True,
+    )
+    assert "Mood no válido" not in caplog.text
