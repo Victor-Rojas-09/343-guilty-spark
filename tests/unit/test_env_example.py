@@ -68,3 +68,11 @@ def test_compose_pasa_las_variables_de_respaldo_sin_exigir_clave() -> None:
         "OPENAI_COMPAT_TOP_P",
     ):
         assert f"{name}: ${{{name}:-" in compose, name
+
+
+def test_el_respaldo_viene_activado_y_sin_clave() -> None:
+    entries = _entries(ENV_EXAMPLE)
+    assert entries["LLM_PROVIDER"] == "gemini"
+    assert entries["LLM_FALLBACK_PROVIDERS"] == "openai_compat"
+    assert entries["OPENAI_COMPAT_API_KEY"] == ""
+    assert "build.nvidia.com" in ENV_EXAMPLE.read_text(encoding="utf-8")

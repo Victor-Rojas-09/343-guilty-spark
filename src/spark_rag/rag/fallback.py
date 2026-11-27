@@ -34,7 +34,12 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable
 
 from spark_rag.config import Settings, get_settings
-from spark_rag.rag.errors import EmptyModelResponse, LLMUnavailable, describe_error
+from spark_rag.rag.errors import (
+    EmptyModelResponse,
+    LLMConfigurationError,
+    LLMUnavailable,
+    describe_error,
+)
 from spark_rag.rag.llm import build_chat_model, chat_model_name, generation_settings
 from spark_rag.rag.llm_errors import FALLBACK_KINDS, classify_error
 from spark_rag.rag.mood import Mood
@@ -261,6 +266,19 @@ def generator_for(
     return build_structured_generator(llm, structured_mode)
 
 
+def chat_configuration_problem(settings: Settings | None = None) -> str | None:
+    """Motivo por el que la cadena de chat no se puede construir, o None.
+
+    Solo construye los modelos (sin llamadas de red). Se usa al arrancar la API
+    para avisar en el log de una clave ausente antes de la primera petición.
+    """
+    try:
+        build_fallback_generator(settings)
+    except LLMConfigurationError as exc:
+        return str(exc)
+    return None
+
+
 def build_fallback_generator(
     settings: Settings | None = None,
     *,
@@ -275,10 +293,20 @@ def build_fallback_generator(
     candidates = []
     for provider in [settings.llm_provider, *settings.llm_fallback_provider_list]:
         mode = str(generation_settings(settings, provider)["structured_mode"])
+        try:
+            llm = model_factory(settings, provider)
+        except LLMConfigurationError as exc:
+            if provider == settings.llm_provider:
+                raise
+            raise LLMConfigurationError(
+                f"El respaldo del chat '{provider}' (LLM_FALLBACK_PROVIDERS) no está "
+                f"configurado. {exc} Si no quieres usar el respaldo, deja "
+                "LLM_FALLBACK_PROVIDERS vacío en .env."
+            ) from exc
         candidates.append(
             Candidate(
                 model=chat_model_name(settings, provider),
-                generator=generator_for(model_factory(settings, provider), mode),
+                generator=generator_for(llm, mode),
                 structured_mode=mode,
             )
         )

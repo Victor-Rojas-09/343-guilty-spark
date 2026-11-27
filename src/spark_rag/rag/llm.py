@@ -84,7 +84,9 @@ def _build_openai_compat(settings: Settings) -> BaseChatModel:
     api_key = settings.openai_compat_api_key.get_secret_value().strip()
     if not api_key:
         raise LLMConfigurationError(
-            "OPENAI_COMPAT_API_KEY no está configurada. Añádela a .env o al entorno."
+            "OPENAI_COMPAT_API_KEY no está configurada. Crea una clave en "
+            "https://build.nvidia.com (API Keys) y añádela a .env como "
+            "OPENAI_COMPAT_API_KEY=<tu clave>; después reinicia la API."
         )
     model_name = settings.openai_compat_chat_model.strip()
     if not model_name:

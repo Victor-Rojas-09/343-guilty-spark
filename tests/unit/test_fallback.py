@@ -18,6 +18,7 @@ from spark_rag.rag.fallback import (
     Candidate,
     FallbackGenerator,
     build_fallback_generator,
+    chat_configuration_problem,
     token_usage,
 )
 from spark_rag.rag.mood import Mood
@@ -718,3 +719,56 @@ def test_mood_valido_no_genera_aviso(caplog: pytest.LogCaptureFixture) -> None:
         True,
     )
     assert "Mood no válido" not in caplog.text
+
+
+# --- Mensajes de configuración al arrancar ----------------------------------------
+
+
+@pytest.fixture
+def _sin_clave_en_el_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("OPENAI_COMPAT_API_KEY", "GEMINI_API_KEY", "LLM_FALLBACK_PROVIDERS"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.usefixtures("_sin_clave_en_el_entorno")
+def test_env_example_sin_clave_de_nvidia_dice_que_hacer() -> None:
+    from spark_rag.config import PROJECT_ROOT
+
+    # Configuración tal cual sale de .env.example, con la clave de Gemini puesta.
+    settings = Settings(_env_file=PROJECT_ROOT / ".env.example", gemini_api_key="fake")
+
+    problem = chat_configuration_problem(settings)
+
+    assert problem is not None
+    assert "respaldo del chat 'openai_compat' (LLM_FALLBACK_PROVIDERS)" in problem
+    assert "OPENAI_COMPAT_API_KEY no está configurada" in problem
+    assert "https://build.nvidia.com" in problem
+    assert "OPENAI_COMPAT_API_KEY=<tu clave>" in problem
+    assert "deja LLM_FALLBACK_PROVIDERS vacío" in problem
+
+
+@pytest.mark.usefixtures("_sin_clave_en_el_entorno")
+def test_respaldo_desactivado_no_exige_la_clave() -> None:
+    from spark_rag.config import PROJECT_ROOT
+
+    settings = Settings(
+        _env_file=PROJECT_ROOT / ".env.example",
+        gemini_api_key="fake",
+        llm_fallback_providers="",
+    )
+    assert chat_configuration_problem(settings) is None
+
+
+def test_principal_openai_compat_sin_clave_no_menciona_el_respaldo() -> None:
+    settings = _settings(llm_provider="openai_compat", openai_compat_api_key="")
+
+    problem = chat_configuration_problem(settings)
+
+    assert problem is not None
+    assert problem.startswith("OPENAI_COMPAT_API_KEY no está configurada")
+    assert "LLM_FALLBACK_PROVIDERS" not in problem
+
+
+def test_configuracion_completa_no_tiene_problemas() -> None:
+    settings = _settings(llm_fallback_providers="openai_compat")
+    assert chat_configuration_problem(settings) is None

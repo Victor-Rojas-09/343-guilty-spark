@@ -183,3 +183,47 @@ def test_health_sigue_disponible(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_arranque_avisa_si_falta_la_clave_del_respaldo(monkeypatch, caplog) -> None:
+    import logging
+
+    from spark_rag.api import main
+
+    message = (
+        "El respaldo del chat 'openai_compat' (LLM_FALLBACK_PROVIDERS) no está "
+        "configurado. OPENAI_COMPAT_API_KEY no está configurada."
+    )
+    monkeypatch.setattr(
+        "spark_rag.rag.fallback.chat_configuration_problem", lambda: message
+    )
+    with caplog.at_level(logging.ERROR, logger="spark_rag.api.main"):
+        main.check_chat_configuration()
+
+    assert f"Chat sin configurar: {message}" in caplog.text
+
+
+def test_arranque_sin_problemas_no_registra_error(monkeypatch, caplog) -> None:
+    import logging
+
+    from spark_rag.api import main
+
+    monkeypatch.setattr(
+        "spark_rag.rag.fallback.chat_configuration_problem", lambda: None
+    )
+    with caplog.at_level(logging.ERROR, logger="spark_rag.api.main"):
+        main.check_chat_configuration()
+
+    assert "Chat sin configurar" not in caplog.text
+
+
+def test_la_comprobacion_del_arranque_nunca_lo_impide(monkeypatch, caplog) -> None:
+    from spark_rag.api import main
+
+    def broken() -> None:
+        raise RuntimeError("fallo inesperado")
+
+    monkeypatch.setattr("spark_rag.rag.fallback.chat_configuration_problem", broken)
+    main.check_chat_configuration()  # no lanza
+
+    assert "No se pudo comprobar la configuración del chat" in caplog.text

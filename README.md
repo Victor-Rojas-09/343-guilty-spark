@@ -172,7 +172,9 @@ Variables principales:
 | `COLLECTION_NAME` | Colección de `langchain-postgres`. |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | Tamaño y solape del chunking. |
 | `LOG_LEVEL` | Nivel de logging. |
-| `LLM_PROVIDER` | Proveedor del modelo de chat (`gemini`). |
+| `LLM_PROVIDER` | Proveedor principal del chat (`gemini` u `openai_compat`). |
+| `LLM_FALLBACK_PROVIDERS` | Respaldo del chat en orden (CSV); por defecto `openai_compat`. Vacío = sin respaldo. |
+| `OPENAI_COMPAT_*` | Proveedor compatible con OpenAI usado como respaldo (NVIDIA). |
 | `GEMINI_CHAT_MODEL` | Modelo de generación de Gemini. |
 | `LLM_TEMPERATURE` / `LLM_MAX_OUTPUT_TOKENS` | Creatividad y longitud máxima de la respuesta. |
 | `LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` | Tiempo máximo y reintentos por llamada al modelo. |
@@ -187,6 +189,41 @@ Todas las variables se leen en `config.py` y también se pasan al servicio
 
 `.env` está ignorado por git. El repositorio solo incluye valores de ejemplo no
 secretos en `.env.example`.
+
+### Respaldo del chat con NVIDIA (activo por defecto)
+
+El chat usa Gemini como proveedor principal y, si Gemini falla por cuota (429),
+saturación (5xx), timeout o conexión, responde el modelo de NVIDIA
+(`mistralai/mistral-large-4-1t-a52b`, API compatible con OpenAI). Los
+embeddings siguen siendo siempre de Gemini. `.env.example` trae el respaldo
+activado (`LLM_FALLBACK_PROVIDERS=openai_compat`); solo falta la clave:
+
+1. Entra en <https://build.nvidia.com>, inicia sesión y crea una clave en
+   **API Keys** (empieza por `nvapi-`).
+2. Pégala en tu `.env` (nunca en `.env.example`):
+
+   ```bash
+   OPENAI_COMPAT_API_KEY=nvapi-...
+   ```
+
+3. Reinicia la API: `docker compose up -d api`.
+
+Si el respaldo está activo y falta la clave, la API arranca igualmente
+(`/health` responde), pero registra al arrancar un error que dice qué hacer:
+
+```text
+Chat sin configurar: El respaldo del chat 'openai_compat' (LLM_FALLBACK_PROVIDERS) no está configurado. OPENAI_COMPAT_API_KEY no está configurada. Crea una clave en https://build.nvidia.com (API Keys) y añádela a .env como OPENAI_COMPAT_API_KEY=<tu clave>; después reinicia la API. Si no quieres usar el respaldo, deja LLM_FALLBACK_PROVIDERS vacío en .env.
+```
+
+y `POST /api/chat` responde `503 llm_not_configured` hasta corregirlo.
+
+Para desactivar el respaldo, deja la variable vacía en `.env`
+(`LLM_FALLBACK_PROVIDERS=`) y reinicia la API: el chat usará solo Gemini, como
+antes. Si tu `.env` no tiene la variable, Docker Compose también la pasa vacía
+(sin respaldo). Con el respaldo activo, los mensajes y los fragmentos
+recuperados del corpus se envían también a NVIDIA cuando Gemini falla. Detalles
+de timeouts y cooldown en la sección «Respaldo del modelo de chat» de las
+decisiones de la Etapa 2 y en los comentarios de `.env.example`.
 
 ---
 

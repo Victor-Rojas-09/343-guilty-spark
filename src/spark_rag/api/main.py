@@ -67,14 +67,34 @@ def _error(status_code: int, error: str, detail: str) -> JSONResponse:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Crea el esquema de sesiones sin impedir el arranque si la BD no responde."""
+    """Prepara el arranque sin impedirlo: /health sigue disponible.
+
+    - Crea el esquema de sesiones (si la BD no responde, /health lo informará).
+    - Comprueba la configuración del chat (principal y respaldo) sin llamadas de
+      red: si falta una clave, lo dice en el log con qué hacer, y /api/chat
+      responderá 503 `llm_not_configured` hasta corregirlo.
+    """
     try:
         from spark_rag.db.sessions import PostgresSessionStore
 
         PostgresSessionStore().initialize()
     except Exception as exc:  # noqa: BLE001 - /health informará del estado
         logger.warning("No se pudo preparar el esquema de sesiones: %s", exc)
+    check_chat_configuration()
     yield
+
+
+def check_chat_configuration() -> None:
+    """Avisa al arrancar si la cadena de chat no está configurada."""
+    try:
+        from spark_rag.rag.fallback import chat_configuration_problem
+
+        problem = chat_configuration_problem()
+    except Exception as exc:  # noqa: BLE001 - nunca impide el arranque
+        logger.warning("No se pudo comprobar la configuración del chat: %s", exc)
+        return
+    if problem:
+        logger.error("Chat sin configurar: %s", problem)
 
 
 app = FastAPI(
