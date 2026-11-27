@@ -10,11 +10,20 @@ Cada intento queda registrado como `Attempt(model, outcome, seconds)`, tanto en
 el resultado como en el `LLMUnavailable` final, para el informe de evaluación.
 Sin respaldo configurado hay un único candidato y el comportamiento es el de
 siempre: cualquier fallo es `LLMUnavailable`.
+
+Cooldown del principal (`LLM_PRIMARY_COOLDOWN_SECONDS`): cuando el principal
+falla y se activa el respaldo, durante ese tiempo no se le vuelve a llamar (el
+intento queda como `skipped_cooldown`) para no gastar su límite por minuto en
+peticiones que casi seguro fallarán. Si el respaldo también falla durante el
+cooldown, la respuesta es `LLMUnavailable` sin llamar al principal. Al vencer,
+el principal se vuelve a probar. Es estado en memoria del proceso (reloj
+monotónico); 0 lo desactiva y sin respaldo no tiene efecto.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -38,6 +47,7 @@ from spark_rag.rag.structured import (
 logger = logging.getLogger(__name__)
 
 OUTCOME_OK = "ok"
+OUTCOME_SKIPPED_COOLDOWN = "skipped_cooldown"
 
 
 @dataclass(frozen=True)
@@ -84,22 +94,63 @@ class FallbackGenerator:
         self,
         candidates: Sequence[Candidate],
         *,
+        primary_cooldown_seconds: float = 0.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not candidates:
             raise ValueError("La cadena de chat necesita al menos un proveedor.")
+        if primary_cooldown_seconds < 0:
+            raise ValueError("El cooldown del principal no puede ser negativo.")
         self._candidates = tuple(candidates)
         self._clock = clock
+        # Solo tiene sentido si hay a quién pasar mientras el principal descansa.
+        self._cooldown = primary_cooldown_seconds if len(self._candidates) > 1 else 0.0
+        self._primary_paused_until: float | None = None
+        # El endpoint es síncrono y corre en el threadpool: varios turnos a la vez.
+        self._lock = threading.Lock()
 
     @property
     def models(self) -> list[str]:
         return [candidate.model for candidate in self._candidates]
 
+    def primary_cooldown_remaining(self) -> float:
+        """Segundos que le quedan al principal en pausa (0 si no lo está)."""
+        with self._lock:
+            if self._primary_paused_until is None:
+                return 0.0
+            remaining = self._primary_paused_until - self._clock()
+            if remaining <= 0:
+                self._primary_paused_until = None
+                return 0.0
+            return remaining
+
+    def _pause_primary(self) -> None:
+        if self._cooldown <= 0:
+            return
+        with self._lock:
+            self._primary_paused_until = self._clock() + self._cooldown
+        logger.warning(
+            "Principal %s en pausa %.0f s: se usará %s.",
+            self._candidates[0].model,
+            self._cooldown,
+            self._candidates[1].model,
+        )
+
     def generate(self, messages: list[BaseMessage]) -> Generation:
         """Genera la respuesta; `LLMUnavailable` (con los intentos) si nadie responde."""
         attempts: list[Attempt] = []
         last = len(self._candidates) - 1
+        remaining = self.primary_cooldown_remaining()
         for index, candidate in enumerate(self._candidates):
+            if index == 0 and remaining > 0:
+                attempts.append(Attempt(candidate.model, OUTCOME_SKIPPED_COOLDOWN, 0.0))
+                logger.info(
+                    "Se salta %s (cooldown, quedan %.0f s); se usa %s.",
+                    candidate.model,
+                    remaining,
+                    self._candidates[1].model,
+                )
+                continue
             started = self._clock()
             try:
                 output = candidate.generator.invoke(messages)
@@ -112,6 +163,8 @@ class FallbackGenerator:
                     Attempt(candidate.model, kind.value, self._elapsed(started))
                 )
                 if index < last and kind in FALLBACK_KINDS:
+                    if index == 0:
+                        self._pause_primary()
                     logger.warning(
                         "Fallo de %s (%s, %.1f s): %s. Se prueba %s.",
                         candidate.model,
@@ -137,9 +190,9 @@ class FallbackGenerator:
             )
             if index > 0:
                 logger.info(
-                    "Respondió el respaldo %s tras %d intento(s) fallido(s).",
+                    "Respondió el respaldo %s tras %d intento(s) sin respuesta.",
                     candidate.model,
-                    index,
+                    len(attempts) - 1,
                 )
             return Generation(
                 reply=reply,
@@ -185,7 +238,13 @@ def build_fallback_generator(
                 structured_mode=mode,
             )
         )
-    generator = FallbackGenerator(candidates)
+    generator = FallbackGenerator(
+        candidates, primary_cooldown_seconds=settings.llm_primary_cooldown_seconds
+    )
     if len(candidates) > 1:
-        logger.info("Cadena de chat: %s", " -> ".join(generator.models))
+        logger.info(
+            "Cadena de chat: %s (cooldown del principal: %.0f s)",
+            " -> ".join(generator.models),
+            settings.llm_primary_cooldown_seconds,
+        )
     return generator

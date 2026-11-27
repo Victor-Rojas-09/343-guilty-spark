@@ -414,3 +414,198 @@ def test_cadena_todos_fallan_conserva_intentos_sin_claves(
     )  # motivo del último fallo, en el log de la cadena
     assert FAKE_KEY not in caplog.text
     assert FAKE_KEY not in str(info.value)
+
+
+# --- Cooldown del principal ------------------------------------------------------
+
+
+class _ManualClock:
+    """Reloj falso que solo avanza cuando la prueba lo pide."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _cooldown_generator(cooldown: float = 60.0, n: int = 2):
+    clock = _ManualClock()
+    models = [_Model(_ok(f"respuesta {i}")) for i in range(n)]
+    names = ["gemini-3.8-flash", "nvidia:mistralai/modelo", "tercero"]
+    generator = FallbackGenerator(
+        [
+            Candidate(model=names[i], generator=RunnableLambda(m))
+            for i, m in enumerate(models)
+        ],
+        primary_cooldown_seconds=cooldown,
+        clock=clock,
+    )
+    return generator, models, clock
+
+
+def test_tras_un_fallo_se_salta_el_principal_durante_el_cooldown() -> None:
+    generator, (primary, fallback), clock = _cooldown_generator()
+    primary.output = FakeAPIError(503, "high demand")
+
+    first = generator.generate(MESSAGES)
+    assert [a.outcome for a in first.attempts] == ["unavailable", "ok"]
+    assert generator.primary_cooldown_remaining() == 60.0
+
+    clock.advance(59.9)
+    second = generator.generate(MESSAGES)
+
+    assert primary.calls == 1  # no se le volvió a llamar
+    assert fallback.calls == 2
+    assert second.model == "nvidia:mistralai/modelo"
+    assert [(a.model, a.outcome, a.seconds) for a in second.attempts] == [
+        ("gemini-3.8-flash", "skipped_cooldown", 0.0),
+        ("nvidia:mistralai/modelo", "ok", 0.0),
+    ]
+
+
+def test_al_vencer_el_cooldown_se_vuelve_a_probar_el_principal() -> None:
+    generator, (primary, fallback), clock = _cooldown_generator()
+    primary.output = FakeAPIError(429, "quota")
+    generator.generate(MESSAGES)
+
+    primary.output = _ok("principal recuperado")
+    clock.advance(60.0)
+    result = generator.generate(MESSAGES)
+
+    assert primary.calls == 2
+    assert fallback.calls == 1
+    assert result.model == "gemini-3.8-flash"
+    assert [a.outcome for a in result.attempts] == ["ok"]
+    assert generator.primary_cooldown_remaining() == 0.0
+
+
+def test_si_el_principal_vuelve_a_fallar_se_renueva_el_cooldown() -> None:
+    generator, (primary, _), clock = _cooldown_generator()
+    primary.output = TimeoutError("read timed out")
+    generator.generate(MESSAGES)
+
+    clock.advance(61.0)
+    generator.generate(MESSAGES)
+
+    assert primary.calls == 2
+    assert generator.primary_cooldown_remaining() == 60.0
+
+
+def test_respaldo_que_falla_durante_el_cooldown_no_llama_al_principal() -> None:
+    generator, (primary, fallback), clock = _cooldown_generator()
+    primary.output = FakeAPIError(503, "high demand")
+    generator.generate(MESSAGES)
+
+    fallback.output = FakeAPIError(503, "overloaded")
+    clock.advance(10.0)
+    with pytest.raises(LLMUnavailable) as info:
+        generator.generate(MESSAGES)
+
+    assert primary.calls == 1
+    assert fallback.calls == 2
+    assert [a.outcome for a in info.value.attempts] == [
+        "skipped_cooldown",
+        "unavailable",
+    ]
+
+
+def test_cooldown_cero_lo_desactiva() -> None:
+    generator, (primary, fallback), _ = _cooldown_generator(cooldown=0)
+    primary.output = FakeAPIError(503, "high demand")
+
+    generator.generate(MESSAGES)
+    generator.generate(MESSAGES)
+
+    assert (primary.calls, fallback.calls) == (2, 2)
+    assert generator.primary_cooldown_remaining() == 0.0
+
+
+def test_sin_respaldo_no_hay_cooldown() -> None:
+    generator, (primary,), _ = _cooldown_generator(n=1)
+    primary.output = FakeAPIError(503, "high demand")
+
+    for _ in range(2):
+        with pytest.raises(LLMUnavailable):
+            generator.generate(MESSAGES)
+
+    assert primary.calls == 2
+    assert generator.primary_cooldown_remaining() == 0.0
+
+
+def test_error_de_configuracion_no_pone_en_pausa_al_principal() -> None:
+    generator, (primary, fallback), _ = _cooldown_generator()
+    primary.output = FakeAPIError(401, "invalid api key")
+
+    with pytest.raises(LLMUnavailable):
+        generator.generate(MESSAGES)
+
+    assert fallback.calls == 0
+    assert generator.primary_cooldown_remaining() == 0.0
+
+
+def test_fallo_de_un_respaldo_no_pone_en_pausa_al_principal() -> None:
+    generator, (primary, second, third), _ = _cooldown_generator(n=3)
+    second.output = FakeAPIError(503, "overloaded")
+
+    generator.generate(MESSAGES)  # responde el principal
+
+    assert (primary.calls, second.calls, third.calls) == (1, 0, 0)
+    assert generator.primary_cooldown_remaining() == 0.0
+
+
+def test_cooldown_negativo_no_se_permite() -> None:
+    with pytest.raises(ValueError, match="negativo"):
+        FallbackGenerator(
+            [Candidate(model="m", generator=RunnableLambda(lambda _: _ok()))],
+            primary_cooldown_seconds=-1,
+        )
+
+
+def test_cooldown_en_el_log(caplog: pytest.LogCaptureFixture) -> None:
+    generator, (primary, _), _ = _cooldown_generator()
+    primary.output = FakeAPIError(503, "high demand")
+
+    with caplog.at_level(logging.INFO, logger="spark_rag.rag.fallback"):
+        generator.generate(MESSAGES)
+        generator.generate(MESSAGES)
+
+    assert "Principal gemini-3.8-flash en pausa 60 s" in caplog.text
+    assert "Se salta gemini-3.8-flash (cooldown, quedan 60 s)" in caplog.text
+
+
+def test_la_cadena_configurada_usa_el_cooldown_de_la_configuracion() -> None:
+    def factory(settings: Settings, provider: str) -> Any:
+        if provider == "gemini":
+            return SimpleNamespace(
+                with_structured_output=lambda *a, **k: RunnableLambda(
+                    _Model(FakeAPIError(503, "high demand"))
+                )
+            )
+        return _fake_llm("respuesta del respaldo")
+
+    generator = build_fallback_generator(
+        _settings(
+            llm_fallback_providers="openai_compat", llm_primary_cooldown_seconds=45
+        ),
+        model_factory=factory,
+    )
+    generator.generate(MESSAGES)
+
+    assert 44 < generator.primary_cooldown_remaining() <= 45
+
+
+def test_la_cadena_marca_el_salto_como_respaldo_usado() -> None:
+    generator, (primary, _), _ = _cooldown_generator()
+    primary.output = FakeAPIError(503, "high demand")
+    chain = SparkRagChain(retrieve=lambda _: [CHUNK], generator=generator)
+    chain.invoke("x")
+
+    result = chain.invoke("x")
+
+    assert result.fallback_used is True
+    assert result.model == "nvidia:mistralai/modelo"
+    assert result.attempts[0].outcome == "skipped_cooldown"
