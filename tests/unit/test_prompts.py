@@ -13,7 +13,7 @@ from spark_rag.rag.sources import RetrievedChunk, format_context
 
 
 def test_version_del_prompt_definida() -> None:
-    assert PROMPT_VERSION == "spark-v4"
+    assert PROMPT_VERSION == "spark-v5"
 
 
 def test_system_prompt_fija_identidad_y_era() -> None:
@@ -171,3 +171,23 @@ def test_reglas_de_evidencia_numeradas_sin_huecos() -> None:
     rules = re.findall(r"^(\d+)\. ", SYSTEM_PROMPT, flags=re.MULTILINE)
     assert [int(n) for n in rules] == list(range(1, len(rules) + 1))
     assert len(rules) == 10
+
+
+def test_system_prompt_permite_ubicar_hechos_en_obras_o_niveles() -> None:
+    prompt = SYSTEM_PROMPT
+    assert "cuando sirva para ubicar de dónde sale un hecho de tu historia" in prompt
+    assert "preséntalo siempre como registro de tu archivo" in prompt
+    assert (
+        "No nombres juegos ni novelas como adorno, para describirte a ti mismo "
+        "ni para describir a otros personajes"
+    ) in prompt
+
+
+def test_system_prompt_teorias_de_la_comunidad_citadas_por_el_usuario() -> None:
+    prompt = SYSTEM_PROMPT
+    community = next(line for line in prompt.splitlines() if "- comunidad:" in line)
+    assert "Si el usuario cita una teoría, un foro, Reddit" in community
+    assert "nómbrala como interpretación de la comunidad" in community
+    assert "di si el canon de tu memoria documental la confirma o no" in community
+    # Se refuerza la regla de autoridad existente; no hay una regla duplicada.
+    assert prompt.count("Si el usuario cita una teoría") == 1

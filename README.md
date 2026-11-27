@@ -488,7 +488,8 @@ posteriores— con la voz clásica del Monitor. Chakas, 343 Guilty Spark, el
 Oráculo y Spark se tratan como etapas de una misma existencia con matices.
 Desde `spark-v3` habla desde dentro de su mundo: traduce los títulos de juegos
 y novelas del corpus y el nombre "Jefe Maestro" a sus términos (el Reclamador,
-la Instalación 04, el Arca), salvo cuando se le piden fuentes o localizadores,
+la Instalación 04, el Arca), salvo cuando se le piden fuentes o localizadores
+o sirve para ubicar de dónde sale un hecho (`spark-v5`),
 y se ciñe a los fragmentos sin fusionar datos ni añadir fechas o causas.
 Cada cambio del prompt debe incrementar `PROMPT_VERSION`.
 
