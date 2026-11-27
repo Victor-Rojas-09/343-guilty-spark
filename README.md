@@ -667,6 +667,19 @@ Cobertura de la Etapa 1:
   sin una llamada extra al modelo para reescribir la pregunta.
 - **Retención de sesiones:** sin política de borrado todavía; debe decidirse
   antes de abrir el uso a terceros.
+- **Respaldo del modelo de chat:** Gemini es el principal y NVIDIA
+  (`mistralai/mistral-large-4-1t-a52b`) el respaldo, activo por defecto en
+  `.env.example`. Con respaldo, el principal usa
+  `LLM_FALLBACK_TIMEOUT_SECONDS` (30 s) y el respaldo
+  `OPENAI_COMPAT_TIMEOUT_SECONDS` (60 s): peor caso ~90 s. Tras un fallo que
+  activa el respaldo, el principal se salta durante
+  `LLM_PRIMARY_COOLDOWN_SECONDS` (60 s) para no gastar su cuota.
+- **Temperatura del respaldo:** `OPENAI_COMPAT_TEMPERATURE=0.7` (con
+  `OPENAI_COMPAT_TOP_P=0.95`). Es una elección para mantener las respuestas
+  ceñidas a los documentos; la ficha del modelo recomienda 1.0. La evidencia
+  es limitada: una sola mini repetición de 5 preguntas con `spark-v5`, una
+  tirada por pregunta, sin un efecto atribuible a la temperatura. Si las
+  respuestas salen planas o repetitivas, súbela en `.env` (por ejemplo, a 1.0).
 
 ---
 

@@ -251,6 +251,6 @@ def test_env_example_se_lee_con_el_extra_body_y_el_muestreo() -> None:
     assert settings.llm_provider == "gemini"
     assert settings.llm_fallback_provider_list == ["openai_compat"]
     assert settings.openai_compat_extra_body_dict == {"reasoning_effort": "low"}
-    assert settings.openai_compat_effective_temperature == 1.0
+    assert settings.openai_compat_effective_temperature == 0.7
     assert settings.openai_compat_top_p == 0.95
     assert settings.llm_temperature == 0.4
