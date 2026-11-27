@@ -8,7 +8,9 @@ Orden de un turno:
    último turno del usuario, para que las preguntas de seguimiento recuperen
    el contexto pertinente sin una llamada extra al modelo.
 4. Guardar usuario + asistente en una única transacción, solo si la
-   generación tuvo éxito: un fallo de Gemini no deja turnos a medias.
+   generación tuvo éxito: un fallo del modelo no deja turnos a medias. En
+   `chat_messages.model` se guarda el modelo que respondió de verdad (el
+   principal o un respaldo de `LLM_FALLBACK_PROVIDERS`).
 """
 
 from __future__ import annotations
@@ -83,7 +85,10 @@ def _to_turns(rows: Sequence[dict[str, Any]]) -> list[ChatTurn]:
 
 
 class ChatService:
-    """Coordina sesión, historial, cadena RAG y persistencia."""
+    """Coordina sesión, historial, cadena RAG y persistencia.
+
+    `model_name` solo se usa si la cadena no indica qué modelo respondió.
+    """
 
     def __init__(
         self,
@@ -133,6 +138,7 @@ class ChatService:
             retrieval_query=build_retrieval_query(message, history),
         )
         details = result.source_details
+        model = result.model or self._model_name
 
         try:
             self._store.save_exchange(
@@ -142,18 +148,21 @@ class ChatService:
                 mood=result.mood.value,
                 sources=details,
                 prompt_version=self._prompt_version,
-                model=self._model_name,
+                model=model,
             )
         except Exception as exc:  # se traduce a error de dominio
             logger.error("No se pudo guardar el turno: %s", type(exc).__name__)
             raise StorageUnavailable("No se pudo guardar la conversación.") from exc
 
         logger.info(
-            "Turno completado session=%s historial=%d fragmentos=%d mood=%s",
+            "Turno completado session=%s historial=%d fragmentos=%d mood=%s "
+            "modelo=%s respaldo=%s",
             session_id,
             len(history),
             len(result.chunks),
             result.mood.value,
+            model,
+            "sí" if result.fallback_used else "no",
         )
         return ChatReply(
             reply=result.reply,

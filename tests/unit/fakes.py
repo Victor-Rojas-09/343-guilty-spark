@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from spark_rag.rag.chain import RagResult
+from spark_rag.rag.fallback import Attempt
 from spark_rag.rag.history import ChatTurn
 from spark_rag.rag.mood import Mood
 from spark_rag.rag.sources import RetrievedChunk
@@ -51,6 +52,9 @@ class FakeChain:
         self.chunks = [CHUNK] if chunks is None else chunks
         self.calls: list[dict[str, Any]] = []
         self.error: Exception | None = None
+        # Modelo e intentos que la cadena indica en el resultado ("" = no lo indica).
+        self.model = ""
+        self.attempts: tuple[Attempt, ...] = ()
 
     def invoke(
         self,
@@ -69,5 +73,9 @@ class FakeChain:
         if self.error is not None:
             raise self.error
         return RagResult(
-            reply=f"Respuesta a: {question}", mood=Mood.THINKING, chunks=self.chunks
+            reply=f"Respuesta a: {question}",
+            mood=Mood.THINKING,
+            chunks=self.chunks,
+            model=self.model,
+            attempts=self.attempts,
         )

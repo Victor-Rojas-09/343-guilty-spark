@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -5,6 +6,7 @@ import pytest
 
 from spark_rag.config import Settings
 from spark_rag.rag.errors import LLMUnavailable, SessionNotFound, StorageUnavailable
+from spark_rag.rag.fallback import Attempt
 from spark_rag.rag.history import ChatTurn
 from spark_rag.rag.mood import Mood
 from spark_rag.rag.service import ChatService, build_retrieval_query
@@ -127,3 +129,57 @@ def test_consulta_de_recuperacion() -> None:
     ]
     assert build_retrieval_query(" Actual ", history) == "Primera\nActual"
     assert build_retrieval_query("Actual", []) == "Actual"
+
+
+def test_guarda_el_modelo_que_respondio() -> None:
+    store, chain = InMemoryStore(), FakeChain()
+    chain.model = "nvidia:mistralai/modelo"
+    chain.attempts = (
+        Attempt("gemini-3.8-flash", "unavailable", 30.0),
+        Attempt("nvidia:mistralai/modelo", "ok", 4.2),
+    )
+
+    reply = _service(chain, store).chat("¿Quién era Chakas?")
+
+    saved = store.messages[reply.session_id]
+    assert saved[1]["model"] == "nvidia:mistralai/modelo"
+    # El contrato de la API no cambia.
+    assert not hasattr(reply, "model")
+
+
+def test_cada_turno_guarda_su_propio_modelo() -> None:
+    store, chain = InMemoryStore(), FakeChain()
+    service = _service(chain, store)
+
+    chain.model = "gemini-3.8-flash"
+    first = service.chat("Hola")
+    chain.model = "nvidia:mistralai/modelo"
+    service.chat("¿Y Chakas?", first.session_id)
+
+    saved = store.messages[first.session_id]
+    assert [m.get("model") for m in saved if m["role"] == "assistant"] == [
+        "gemini-3.8-flash",
+        "nvidia:mistralai/modelo",
+    ]
+
+
+def test_sin_modelo_en_el_resultado_usa_model_name() -> None:
+    store, chain = InMemoryStore(), FakeChain()
+    reply = _service(chain, store).chat("Hola")
+    assert store.messages[reply.session_id][1]["model"] == "modelo-test"
+
+
+def test_log_del_turno_indica_modelo_y_respaldo(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store, chain = InMemoryStore(), FakeChain()
+    chain.model = "nvidia:mistralai/modelo"
+    chain.attempts = (
+        Attempt("gemini-3.8-flash", "skipped_cooldown", 0.0),
+        Attempt("nvidia:mistralai/modelo", "ok", 3.0),
+    )
+
+    with caplog.at_level(logging.INFO, logger="spark_rag.rag.service"):
+        _service(chain, store).chat("Hola")
+
+    assert "modelo=nvidia:mistralai/modelo respaldo=sí" in caplog.text
